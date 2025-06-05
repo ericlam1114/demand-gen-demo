@@ -348,7 +348,7 @@ function DataSourcesContent() {
                   <h3 className="text-lg font-medium text-blue-900 mb-2">CSV Column Mapping</h3>
                   <p className="text-blue-700">
                     Map your CSV column headers to system fields so the platform knows how to process your data. 
-                    This allows you to use CSVs with different column names (e.g., "Customer Name" instead of "name").
+                    This allows you to use CSVs with different column names (e.g., &quot;Customer Name&quot; instead of &quot;name&quot;).
                   </p>
                 </div>
               </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Search, MoreHorizontal, Eye, CheckCircle, RotateCcw, Upload, X, FileText, Calendar, Mail, DollarSign, User, MapPin, FolderOpen, FolderCheck, Clock, TrendingUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
@@ -42,7 +42,7 @@ function DashboardContent() {
   })
 
   // Fetch letters and related data
-  const fetchLetters = async () => {
+  const fetchLetters = useCallback(async () => {
     try {
       console.log('Starting fetchLetters...')
       const { data, error } = await supabase
@@ -93,11 +93,11 @@ function DashboardContent() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     fetchLetters()
-  }, [])
+  }, [fetchLetters])
 
   useEffect(() => {
     // Filter letters based on search term and status
