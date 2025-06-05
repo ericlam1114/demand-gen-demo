@@ -102,6 +102,7 @@ function WorkflowsContent() {
   }, [])
 
   const fetchWorkflows = async () => {
+    console.log('[Workflow] Fetching workflows...')
     try {
       const { data, error } = await supabase
         .from('workflows')
@@ -116,26 +117,34 @@ function WorkflowsContent() {
             template_id,
             templates (
               name,
-              subject
+              email_subject
             )
           )
         `)
         .order('created_at', { ascending: false })
 
+      console.log('[Workflow] Fetch workflows result:', { 
+        dataCount: data?.length || 0, 
+        error,
+        data: data?.map(w => ({ id: w.id, name: w.name, steps: w.workflow_steps?.length || 0 }))
+      })
+
       if (error) {
-        console.log('Workflows query error:', error)
+        console.log('[Workflow] Workflows query error:', error)
         // Handle RLS issues gracefully
         setWorkflows([])
         return
       }
 
+      console.log('[Workflow] Setting workflows:', data?.length || 0, 'workflows')
       setWorkflows(data || [])
       
       if (data && data.length > 0 && !selectedWorkflow) {
+        console.log('[Workflow] Auto-selecting first workflow:', data[0].name)
         selectWorkflow(data[0])
       }
     } catch (error) {
-      console.error('Error fetching workflows:', error)
+      console.error('[Workflow] Error fetching workflows:', error)
       setWorkflows([])
     }
   }
@@ -193,6 +202,11 @@ function WorkflowsContent() {
   }
 
   const saveWorkflow = async () => {
+    console.log('[Workflow] Save workflow called')
+    console.log('[Workflow] Form data:', workflowForm)
+    console.log('[Workflow] Workflow steps:', workflowSteps)
+    console.log('[Workflow] Selected workflow:', selectedWorkflow)
+    
     if (!workflowForm.name.trim()) {
       toast.error('Please provide a workflow name')
       return
@@ -208,6 +222,7 @@ function WorkflowsContent() {
       let workflowId = selectedWorkflow?.id
 
       if (selectedWorkflow) {
+        console.log('[Workflow] Updating existing workflow:', selectedWorkflow.id)
         // Update existing workflow
         const { error: workflowError } = await supabase
           .from('workflows')
@@ -220,14 +235,20 @@ function WorkflowsContent() {
           })
           .eq('id', selectedWorkflow.id)
 
+        console.log('[Workflow] Update workflow result:', { error: workflowError })
         if (workflowError) throw workflowError
 
+        console.log('[Workflow] Clearing existing steps for workflow:', selectedWorkflow.id)
         // Clear existing steps
-        await supabase
+        const { error: clearError } = await supabase
           .from('workflow_steps')
           .delete()
           .eq('workflow_id', selectedWorkflow.id)
+          
+        console.log('[Workflow] Clear steps result:', { error: clearError })
+        if (clearError) console.log('Warning: Could not clear existing steps:', clearError)
       } else {
+        console.log('[Workflow] Creating new workflow')
         // Create new workflow
         const { data: newWorkflow, error: workflowError } = await supabase
           .from('workflows')
@@ -241,16 +262,22 @@ function WorkflowsContent() {
           .select()
           .single()
 
+        console.log('[Workflow] Create workflow result:', { data: newWorkflow, error: workflowError })
         if (workflowError) throw workflowError
         workflowId = newWorkflow.id
+        console.log('[Workflow] New workflow ID:', workflowId)
       }
 
       // If this workflow is set as default, remove default from others
       if (workflowForm.is_default) {
-        await supabase
+        console.log('[Workflow] Setting as default, clearing others')
+        const { error: defaultError } = await supabase
           .from('workflows')
           .update({ is_default: false })
           .neq('id', workflowId)
+          
+        console.log('[Workflow] Clear default result:', { error: defaultError })
+        if (defaultError) console.log('Warning: Could not clear other defaults:', defaultError)
       }
 
       // Insert workflow steps
@@ -263,18 +290,21 @@ function WorkflowsContent() {
         template_id: step.template_id
       }))
 
+      console.log('[Workflow] Inserting steps:', stepsToInsert)
       const { error: stepsError } = await supabase
         .from('workflow_steps')
         .insert(stepsToInsert)
 
+      console.log('[Workflow] Insert steps result:', { error: stepsError })
       if (stepsError) throw stepsError
 
       toast.success(selectedWorkflow ? 'Workflow updated successfully' : 'Workflow created successfully')
+      console.log('[Workflow] Save successful, refreshing workflows')
       fetchWorkflows()
       setIsEditing(false)
     } catch (error) {
-      console.error('Error saving workflow:', error)
-      toast.error('Failed to save workflow')
+      console.error('[Workflow] Error saving workflow:', error)
+      toast.error('Failed to save workflow: ' + (error.message || 'Unknown error'))
     } finally {
       setIsSaving(false)
     }
@@ -294,6 +324,15 @@ function WorkflowsContent() {
   const updateStep = (index, field, value) => {
     const updated = [...workflowSteps]
     updated[index] = { ...updated[index], [field]: value }
+    
+    // If step type changed, clear template if it doesn't match the new type
+    if (field === 'step_type') {
+      const currentTemplate = templates.find(t => t.id === updated[index].template_id)
+      if (currentTemplate && currentTemplate.channel !== value) {
+        updated[index].template_id = null
+      }
+    }
+    
     setWorkflowSteps(updated)
   }
 
@@ -605,12 +644,19 @@ function WorkflowsContent() {
                                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                                 >
                                   <option value="">Select template</option>
-                                  {templates.map(template => (
-                                    <option key={template.id} value={template.id}>
-                                      {template.name}
-                                    </option>
-                                  ))}
+                                  {templates
+                                    .filter(template => template.channel === step.step_type)
+                                    .map(template => (
+                                      <option key={template.id} value={template.id}>
+                                        {template.name}
+                                      </option>
+                                    ))}
                                 </select>
+                                {templates.filter(template => template.channel === step.step_type).length === 0 && (
+                                  <p className="text-xs text-amber-600 mt-1">
+                                    No {step.step_type} templates available. Create one in the Templates section first.
+                                  </p>
+                                )}
                               </div>
                             )}
                           </div>

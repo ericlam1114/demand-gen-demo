@@ -21,42 +21,84 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
   const router = useRouter()
 
+  // Debug logging
+  const debugLog = (message, data = null) => {
+    console.log(`[AuthProvider] ${message}`, data)
+  }
+
   useEffect(() => {
+    debugLog('AuthProvider useEffect starting')
+    
+    // Set a maximum loading time to prevent infinite hanging
+    const loadingTimeout = setTimeout(() => {
+      debugLog('Auth loading timeout reached, forcing end of loading state')
+      setLoading(false)
+    }, 10000) // 10 second timeout
+
     // Get initial session
+    debugLog('Getting initial session...')
     supabase.auth.getSession().then(({ data: { session } }) => {
+      debugLog('Initial session result:', session ? 'Session found' : 'No session')
+      
       if (session?.user) {
+        debugLog('Setting user from session:', session.user.id)
         setUser(session.user)
         loadUserProfile(session.user.id)
       } else {
+        debugLog('No session, setting loading false')
+        clearTimeout(loadingTimeout)
         setLoading(false)
       }
+    }).catch((error) => {
+      debugLog('Error getting session:', error)
+      clearTimeout(loadingTimeout)
+      setLoading(false)
     })
 
     // Listen for auth changes
+    debugLog('Setting up auth state change listener')
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        debugLog('Auth state change:', { event, sessionExists: !!session })
+        clearTimeout(loadingTimeout)
+        
         if (event === 'SIGNED_IN' && session?.user) {
+          debugLog('Sign in detected, loading profile for:', session.user.id)
           setUser(session.user)
           await loadUserProfile(session.user.id)
         } else if (event === 'SIGNED_OUT') {
+          debugLog('Sign out detected')
           setUser(null)
           setProfile(null)
           setAgency(null)
+          setLoading(false)
           router.push('/login')
+        } else {
+          debugLog('Other auth event, setting loading false')
+          setLoading(false)
         }
-        setLoading(false)
       }
     )
 
-    return () => subscription.unsubscribe()
+    return () => {
+      debugLog('Cleaning up auth provider')
+      clearTimeout(loadingTimeout)
+      subscription.unsubscribe()
+    }
   }, [router])
 
   const loadUserProfile = async (userId) => {
+    debugLog('loadUserProfile called for:', userId)
+    
     try {
-      console.log('Loading user profile for userId:', userId)
-      
-      // Get user profile with agency info
-      const { data: profileData, error: profileError } = await supabase
+      // Create a simple timeout for profile loading
+      const profileTimeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Profile loading timeout')), 5000)
+      )
+
+      // Try to get user profile with a timeout
+      debugLog('Querying user profile...')
+      const profileQuery = supabase
         .from('user_profiles')
         .select(`
           *,
@@ -73,99 +115,98 @@ export function AuthProvider({ children }) {
         .eq('id', userId)
         .single()
 
-      console.log('Profile query result:', { profileData, profileError })
+      let profileData, profileError
 
-      if (profileError) {
-        console.error('Error loading profile:', profileError)
+      try {
+        const result = await Promise.race([profileQuery, profileTimeout])
+        profileData = result.data
+        profileError = result.error
+        debugLog('Profile query completed:', { hasData: !!profileData, error: profileError })
+      } catch (timeoutError) {
+        debugLog('Profile loading timed out, using fallback')
+        profileError = { code: 'TIMEOUT' }
+      }
+
+      if (profileError || !profileData) {
+        debugLog('Profile error or not found, creating fallback profile...')
         
-        // If profile doesn't exist, create a simple temporary one and continue
-        if (profileError.code === 'PGRST116') {
-          console.log('Profile not found, creating temporary profile for demo...')
-          
-          // Get user info from auth
-          const { data: { user }, error: userError } = await supabase.auth.getUser()
-          
-          if (user && !userError) {
-            // Create a simple profile without agency for now
-            const tempProfile = {
-              id: userId,
-              email: user.email,
-              full_name: user.user_metadata?.full_name || user.email,
-              role: 'user',
-              agency_id: null,
-              agencies: null
-            }
-            
-            console.log('Using temporary profile:', tempProfile)
-            setProfile(tempProfile)
-            setAgency(null)
-            
-            // Don't redirect to onboarding, let them use the app
-            setLoading(false)
-            return
+        // Create a fallback profile immediately
+        const fallbackProfile = {
+          id: userId,
+          email: user?.email || 'demo@example.com',
+          full_name: user?.user_metadata?.full_name || user?.email || 'Demo User',
+          role: 'user',
+          agency_id: null,
+          agencies: {
+            id: 'demo-agency',
+            name: 'Demo Agency',
+            slug: 'demo',
+            plan: 'free',
+            max_users: 1,
+            max_letters_per_month: 50,
+            logo_url: null
           }
         }
         
-        // For other errors, create a basic profile and continue
-        console.log('Creating basic profile for demo purposes...')
-        const basicProfile = {
-          id: userId,
-          email: 'demo@example.com',
-          full_name: 'Demo User',
-          role: 'user',
-          agency_id: null,
-          agencies: null
-        }
-        
-        setProfile(basicProfile)
-        setAgency(null)
+        debugLog('Using fallback profile:', fallbackProfile)
+        setProfile(fallbackProfile)
+        setAgency(fallbackProfile.agencies)
         setLoading(false)
         return
       }
 
-      console.log('Successfully loaded profile:', profileData)
+      debugLog('Successfully loaded profile, setting state')
       setProfile(profileData)
-      setAgency(profileData.agencies)
-
-      // Update last login (don't await this, let it happen in background)
-      supabase
-        .from('user_profiles')
-        .update({ last_login_at: new Date().toISOString() })
-        .eq('id', userId)
-        .then(({ error }) => {
-          if (error) console.log('Failed to update last login:', error)
-        })
-
+      setAgency(profileData.agencies || null)
       setLoading(false)
 
     } catch (error) {
-      console.error('Unexpected error in loadUserProfile:', error)
+      debugLog('Unexpected error in loadUserProfile:', error)
       
-      // Create a fallback profile so the app doesn't crash
+      // Always create a fallback profile on any error
       const fallbackProfile = {
         id: userId,
         email: 'demo@example.com',
         full_name: 'Demo User',
         role: 'user',
         agency_id: null,
-        agencies: null
+        agencies: {
+          id: 'demo-agency',
+          name: 'Demo Agency',
+          slug: 'demo',
+          plan: 'free',
+          max_users: 1,
+          max_letters_per_month: 50,
+          logo_url: null
+        }
       }
       
+      debugLog('Using error fallback profile')
       setProfile(fallbackProfile)
-      setAgency(null)
+      setAgency(fallbackProfile.agencies)
       setLoading(false)
     }
   }
 
   const signIn = async (email, password) => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    })
-    return { data, error }
+    debugLog('signIn called for:', email)
+    
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      })
+      
+      debugLog('SignIn result:', { hasData: !!data, error })
+      return { data, error }
+    } catch (err) {
+      debugLog('SignIn exception:', err)
+      return { data: null, error: err }
+    }
   }
 
   const signUp = async (email, password, metadata = {}) => {
+    debugLog('signUp called for:', email)
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -173,11 +214,14 @@ export function AuthProvider({ children }) {
         data: metadata
       }
     })
+    debugLog('SignUp result:', { hasData: !!data, error })
     return { data, error }
   }
 
   const signOut = async () => {
+    debugLog('signOut called')
     const { error } = await supabase.auth.signOut()
+    debugLog('SignOut result:', { error })
     return { error }
   }
 
@@ -186,6 +230,7 @@ export function AuthProvider({ children }) {
   const canManageTeam = () => isManager()
   const canDeleteContent = () => isManager()
 
+  // Add debug info to the context value
   const value = {
     user,
     profile,
@@ -198,8 +243,22 @@ export function AuthProvider({ children }) {
     isManager,
     canManageTeam,
     canDeleteContent,
-    loadUserProfile
+    loadUserProfile,
+    // Debug info
+    _debug: {
+      hasUser: !!user,
+      hasProfile: !!profile,
+      hasAgency: !!agency,
+      loading
+    }
   }
+
+  debugLog('AuthProvider render', { 
+    hasUser: !!user, 
+    hasProfile: !!profile, 
+    hasAgency: !!agency, 
+    loading 
+  })
 
   return (
     <AuthContext.Provider value={value}>

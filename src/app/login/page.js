@@ -17,16 +17,38 @@ export default function LoginPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    console.log('[Login] Form submitted')
     setLoading(true)
     setError('')
 
-    const { error } = await signIn(email, password)
-    
-    if (error) {
-      setError(error.message)
+    try {
+      console.log('[Login] Calling signIn with:', email)
+      const { error } = await signIn(email, password)
+      
+      console.log('[Login] SignIn response:', { hasError: !!error, error })
+      
+      if (error) {
+        console.log('[Login] Sign in failed:', error.message)
+        setError(error.message)
+        setLoading(false)
+      } else {
+        console.log('[Login] Sign in successful, redirecting...')
+        // Keep loading true briefly while redirecting
+        setTimeout(() => {
+          console.log('[Login] Executing redirect to dashboard')
+          router.push('/dashboard')
+        }, 100)
+        
+        // Set loading to false after a brief delay in case redirect fails
+        setTimeout(() => {
+          console.log('[Login] Setting loading false as fallback')
+          setLoading(false)
+        }, 3000)
+      }
+    } catch (err) {
+      console.error('[Login] Login error:', err)
+      setError('An unexpected error occurred. Please try again.')
       setLoading(false)
-    } else {
-      router.push('/dashboard')
     }
   }
 

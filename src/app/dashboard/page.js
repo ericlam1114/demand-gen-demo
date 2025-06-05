@@ -9,6 +9,7 @@ import toast from 'react-hot-toast'
 import Papa from 'papaparse'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { AppLayout } from '@/components/layout/AppLayout'
+import { startWorkflowForDebtor, stopWorkflowForDebtor } from '@/lib/workflow-engine'
 
 function DashboardContent() {
   const [letters, setLetters] = useState([])
@@ -40,6 +41,9 @@ function DashboardContent() {
     collectedAmount: 0,
     collectionRate: 0
   })
+
+  const [workflows, setWorkflows] = useState([])
+  const [selectedWorkflow, setSelectedWorkflow] = useState(null)
 
   // Fetch letters and related data
   const fetchLetters = useCallback(async () => {
@@ -294,6 +298,67 @@ function DashboardContent() {
     } catch (error) {
       console.error('Error fetching events:', error)
       setPersonEvents([])
+    }
+  }
+
+  // Fetch workflows for workflow selection
+  useEffect(() => {
+    fetchWorkflows()
+  }, [])
+
+  const fetchWorkflows = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('workflows')
+        .select('id, name, is_default')
+        .eq('is_active', true)
+        .order('is_default', { ascending: false })
+
+      if (!error) {
+        setWorkflows(data || [])
+        // Auto-select default workflow
+        const defaultWorkflow = data?.find(w => w.is_default)
+        if (defaultWorkflow) {
+          setSelectedWorkflow(defaultWorkflow.id)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching workflows:', error)
+    }
+  }
+
+  const startWorkflow = async (debtorId, debtorName) => {
+    if (!selectedWorkflow) {
+      toast.error('Please select a workflow first')
+      return
+    }
+
+    try {
+      const result = await startWorkflowForDebtor(debtorId, selectedWorkflow)
+      if (result.success) {
+        toast.success(`Workflow started for ${debtorName}`)
+        fetchLetters() // Refresh to show updates
+      } else {
+        toast.error(result.error)
+      }
+    } catch (error) {
+      console.error('Error starting workflow:', error)
+      toast.error('Failed to start workflow')
+    }
+  }
+
+  const stopWorkflow = async (debtorId, debtorName) => {
+    try {
+      const result = await stopWorkflowForDebtor(debtorId, 'manual_stop')
+      if (result.success) {
+        toast.success(`Workflow stopped for ${debtorName}`)
+        fetchLetters() // Refresh to show updates
+      } else {
+        toast.error(result.error)
+      }
+    } catch (error) {
+      console.error('Error stopping workflow:', error)
+      toast.error('Failed to stop workflow')
     }
   }
 
