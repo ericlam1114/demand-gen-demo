@@ -20,6 +20,9 @@ export async function POST(request) {
         console.error('Invalid SendGrid webhook signature')
         return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
       }
+    } else {
+      // Log warning if verification is disabled
+      console.warn('[SendGrid Webhook] Running without signature verification - not recommended for production')
     }
 
     const events = JSON.parse(body)
