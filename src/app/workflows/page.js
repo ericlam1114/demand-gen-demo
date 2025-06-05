@@ -7,7 +7,14 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { PlanRestrictionBanner, PlanFeatureLock } from '@/components/ui/plan-restriction-banner'
-import { hasFeature, getAllowedStepTypes, getUpgradeMessage } from '@/lib/plan-restrictions'
+import { 
+  hasFeature, 
+  getAllowedStepTypes, 
+  getUpgradeMessage,
+  getWorkflowLimits,
+  canCreateWorkflow,
+  getWorkflowUpgradeMessage 
+} from '@/lib/plan-restrictions'
 import { 
   Plus, 
   Mail, 
@@ -28,7 +35,8 @@ import {
   DollarSign,
   Star,
   StarOff,
-  Crown
+  Crown,
+  AlertCircle
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -95,6 +103,8 @@ function WorkflowsContent() {
   // Check if workflows feature is available
   const workflowsEnabled = hasFeature(currentPlan, 'workflows')
   const allowedStepTypes = getAllowedStepTypes(currentPlan)
+  const workflowLimits = getWorkflowLimits(currentPlan)
+  const canCreateMore = canCreateWorkflow(currentPlan, workflows.length)
 
   useEffect(() => {
     fetchWorkflows()
@@ -182,6 +192,11 @@ function WorkflowsContent() {
   }
 
   const createNewWorkflow = () => {
+    if (!canCreateMore) {
+      toast.error(getWorkflowUpgradeMessage(currentPlan, workflows.length))
+      return
+    }
+
     setSelectedWorkflow(null)
     setWorkflowSteps([
       {
@@ -195,7 +210,7 @@ function WorkflowsContent() {
     setWorkflowForm({
       name: 'New Workflow',
       description: '',
-      is_default: false,
+      is_default: workflows.length === 0, // First workflow becomes default
       is_active: true
     })
     setIsEditing(true)
@@ -217,9 +232,27 @@ function WorkflowsContent() {
       return
     }
 
+    // Check workflow limits for new workflows
+    if (!selectedWorkflow && !canCreateMore) {
+      toast.error(getWorkflowUpgradeMessage(currentPlan, workflows.length))
+      return
+    }
+
     setIsSaving(true)
     try {
       let workflowId = selectedWorkflow?.id
+
+      // If this workflow is being set as default, remove default from others first
+      if (workflowForm.is_default) {
+        console.log('[Workflow] Setting as default, clearing others')
+        const { error: defaultError } = await supabase
+          .from('workflows')
+          .update({ is_default: false })
+          .neq('id', workflowId || 'new')
+          
+        console.log('[Workflow] Clear default result:', { error: defaultError })
+        if (defaultError) console.log('Warning: Could not clear other defaults:', defaultError)
+      }
 
       if (selectedWorkflow) {
         console.log('[Workflow] Updating existing workflow:', selectedWorkflow.id)
@@ -266,18 +299,6 @@ function WorkflowsContent() {
         if (workflowError) throw workflowError
         workflowId = newWorkflow.id
         console.log('[Workflow] New workflow ID:', workflowId)
-      }
-
-      // If this workflow is set as default, remove default from others
-      if (workflowForm.is_default) {
-        console.log('[Workflow] Setting as default, clearing others')
-        const { error: defaultError } = await supabase
-          .from('workflows')
-          .update({ is_default: false })
-          .neq('id', workflowId)
-          
-        console.log('[Workflow] Clear default result:', { error: defaultError })
-        if (defaultError) console.log('Warning: Could not clear other defaults:', defaultError)
       }
 
       // Insert workflow steps
@@ -345,11 +366,20 @@ function WorkflowsContent() {
 
   const toggleDefault = async (workflowId) => {
     try {
+      // Get the current workflow to check if it's already default
+      const currentWorkflow = workflows.find(w => w.id === workflowId)
+      if (currentWorkflow?.is_default) {
+        toast.error('This workflow is already set as default')
+        return
+      }
+
       // First, remove default from all workflows
-      await supabase
+      const { error: clearError } = await supabase
         .from('workflows')
         .update({ is_default: false })
-        .neq('id', '')
+        .neq('id', workflowId)
+
+      if (clearError) throw clearError
 
       // Then set this one as default
       const { error } = await supabase
@@ -386,6 +416,27 @@ function WorkflowsContent() {
           />
         )}
 
+        {/* Workflow Limits Info */}
+        {workflowsEnabled && workflowLimits.limit !== -1 && (
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <AlertCircle className="w-5 h-5 text-blue-600 mr-2" />
+                <span className="text-sm text-blue-800">
+                  <strong>{workflows.length}/{workflowLimits.limit}</strong> workflows used
+                  {currentPlan === 'professional' && ' (1 can run at a time)'}
+                </span>
+              </div>
+              {!canCreateMore && (
+                <Button size="sm" variant="outline">
+                  <Crown className="w-4 h-4 mr-2" />
+                  Upgrade for More
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           {/* Workflow List */}
           <div className="lg:col-span-1">
@@ -394,7 +445,12 @@ function WorkflowsContent() {
                 <div className="flex items-center justify-between">
                   <h3 className="font-medium text-gray-900">Workflows</h3>
                   {workflowsEnabled ? (
-                    <Button size="sm" onClick={createNewWorkflow}>
+                    <Button 
+                      size="sm" 
+                      onClick={createNewWorkflow}
+                      disabled={!canCreateMore}
+                      className={!canCreateMore ? 'opacity-50 cursor-not-allowed' : ''}
+                    >
                       <Plus className="w-4 h-4" />
                     </Button>
                   ) : (
@@ -687,10 +743,19 @@ function WorkflowsContent() {
               <div className="bg-white rounded-lg shadow p-12 text-center">
                 <h3 className="text-lg font-medium text-gray-900 mb-4">No Workflow Selected</h3>
                 <p className="text-gray-500 mb-6">Select a workflow from the list or create a new one to get started.</p>
-                <Button onClick={createNewWorkflow}>
+                <Button 
+                  onClick={createNewWorkflow}
+                  disabled={!canCreateMore}
+                  className={!canCreateMore ? 'opacity-50 cursor-not-allowed' : ''}
+                >
                   <Plus className="w-4 h-4 mr-2" />
                   Create New Workflow
                 </Button>
+                {!canCreateMore && (
+                  <p className="text-xs text-gray-500 mt-2">
+                    {getWorkflowUpgradeMessage(currentPlan, workflows.length)}
+                  </p>
+                )}
               </div>
             )}
           </div>

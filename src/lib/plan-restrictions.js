@@ -1,5 +1,29 @@
 // Plan feature restrictions and utilities
 
+const PLAN_FEATURES = {
+  free: {
+    features: ['basic_templates', 'email_sending', 'basic_analytics'],
+    templates: { limit: 3 },
+    letters: { limit: 100 },
+    workflows: { limit: 1, concurrent: 1 }, // 1 workflow, 1 concurrent execution
+    stepTypes: ['email', 'physical']
+  },
+  professional: {
+    features: ['basic_templates', 'email_sending', 'sms_sending', 'basic_analytics', 'workflows', 'wait_steps'],
+    templates: { limit: 10 },
+    letters: { limit: 1000 },
+    workflows: { limit: 5, concurrent: 1 }, // 5 workflows, but only 1 can run at a time
+    stepTypes: ['email', 'sms', 'physical', 'wait']
+  },
+  enterprise: {
+    features: ['basic_templates', 'advanced_templates', 'email_sending', 'sms_sending', 'physical_mail', 'advanced_analytics', 'workflows', 'wait_steps', 'api_access'],
+    templates: { limit: -1 }, // unlimited
+    letters: { limit: -1 }, // unlimited
+    workflows: { limit: -1, concurrent: -1 }, // unlimited workflows and concurrent executions
+    stepTypes: ['email', 'sms', 'physical', 'wait']
+  }
+}
+
 export const PLAN_TIERS = {
   free: {
     name: 'Free',
@@ -134,4 +158,30 @@ export function getRestrictionProps(planName, featureName) {
     planName,
     featureName
   }
+}
+
+export function getWorkflowLimits(plan) {
+  return PLAN_FEATURES[plan]?.workflows || { limit: 0, concurrent: 0 }
+}
+
+export function canCreateWorkflow(plan, currentWorkflowCount) {
+  const limits = getWorkflowLimits(plan)
+  return limits.limit === -1 || currentWorkflowCount < limits.limit
+}
+
+export function canRunConcurrentWorkflows(plan, currentActiveWorkflows) {
+  const limits = getWorkflowLimits(plan)
+  return limits.concurrent === -1 || currentActiveWorkflows < limits.concurrent
+}
+
+export function getWorkflowUpgradeMessage(plan, currentCount) {
+  const limits = getWorkflowLimits(plan)
+  
+  if (plan === 'free') {
+    return `You've reached the limit of ${limits.limit} workflow. Upgrade to Professional for up to 5 workflows.`
+  } else if (plan === 'professional') {
+    return `You've reached the limit of ${limits.limit} workflows. Upgrade to Enterprise for unlimited workflows.`
+  }
+  
+  return 'Upgrade to access more workflow features.'
 } 
