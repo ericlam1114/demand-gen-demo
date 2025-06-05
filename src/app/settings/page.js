@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/components/auth/AuthProvider'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { 
@@ -20,6 +21,7 @@ import {
 import toast from 'react-hot-toast'
 
 function SettingsContent() {
+  const { profile } = useAuth()
   const [settings, setSettings] = useState({
     company_name: '',
     company_address: '',
@@ -43,19 +45,32 @@ function SettingsContent() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    fetchSettings()
-  }, [])
+    if (profile?.agency_id) {
+      fetchSettings()
+    }
+  }, [profile?.agency_id])
 
   const fetchSettings = async () => {
     try {
+      console.log('[Settings] Fetching settings for agency:', profile?.agency_id)
+      
+      if (!profile?.agency_id) {
+        console.log('[Settings] No agency_id found, skipping fetch')
+        setLoading(false)
+        return
+      }
+
       const { data, error } = await supabase
         .from('company_settings')
         .select('*')
+        .eq('agency_id', profile.agency_id)
         .limit(1)
         .single()
 
+      console.log('[Settings] Query result:', { hasData: !!data, error })
+
       if (error && error.code !== 'PGRST116') {
-        console.error('Error fetching settings:', error)
+        console.error('[Settings] Error fetching settings:', error)
         return
       }
 
@@ -68,7 +83,7 @@ function SettingsContent() {
         setSettings(cleanedData)
       }
     } catch (error) {
-      console.error('Error fetching settings:', error)
+      console.error('[Settings] Error fetching settings:', error)
     } finally {
       setLoading(false)
     }
@@ -80,6 +95,7 @@ function SettingsContent() {
       const { data: existingSettings } = await supabase
         .from('company_settings')
         .select('id')
+        .eq('agency_id', profile.agency_id)
         .limit(1)
         .single()
 
@@ -97,7 +113,11 @@ function SettingsContent() {
         // Insert new
         result = await supabase
           .from('company_settings')
-          .insert(settings)
+          .insert({
+            ...settings,
+            agency_id: profile.agency_id,
+            created_by: profile.id
+          })
       }
 
       if (result.error) throw result.error
