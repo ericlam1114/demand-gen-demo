@@ -44,20 +44,37 @@ export function AuthProvider({ children }) {
     // Set a longer loading timeout for initial load to handle page refreshes
     const loadingTimeout = setTimeout(() => {
       debugLog('Auth loading timeout reached, forcing end of loading state')
+      console.log('[AuthProvider] TIMEOUT: Auth loading timeout after 10s, current state:', {
+        hasUser: !!user,
+        hasProfile: !!profile,
+        hasAgency: !!agency,
+        loading,
+        currentPath: typeof window !== 'undefined' ? window.location.pathname : 'unknown'
+      })
       setLoading(false)
       // Only redirect to login if we're not already on the login page
       if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+        debugLog('Redirecting to login due to timeout')
         router.push('/login')
       }
     }, 10000) // Increased to 10s to handle slower page refreshes
 
     // Get initial session with better error handling
     debugLog('Getting initial session...')
+    console.log('[AuthProvider] Starting session check...')
+    
     supabase.auth.getSession().then(({ data: { session }, error }) => {
       debugLog('Initial session result:', { hasSession: !!session, error })
+      console.log('[AuthProvider] Session check result:', { 
+        hasSession: !!session, 
+        userId: session?.user?.id,
+        error: error?.message || 'none',
+        currentPath: typeof window !== 'undefined' ? window.location.pathname : 'unknown'
+      })
       
       if (error) {
         debugLog('Session error, redirecting to login:', error)
+        console.log('[AuthProvider] Session error, clearing state and redirecting:', error.message)
         clearTimeout(loadingTimeout)
         setLoading(false)
         setUser(null)
@@ -72,9 +89,11 @@ export function AuthProvider({ children }) {
       
       if (session?.user) {
         debugLog('Setting user from session:', session.user.id)
+        console.log('[AuthProvider] Valid session found, loading profile for user:', session.user.id)
         setUser(session.user)
         loadUserProfile(session.user.id).catch(err => {
           debugLog('Error loading profile:', err)
+          console.log('[AuthProvider] Profile loading failed:', err.message)
           clearTimeout(loadingTimeout)
           setLoading(false)
           setUser(null)
@@ -89,6 +108,7 @@ export function AuthProvider({ children }) {
         })
       } else {
         debugLog('No session, setting loading false')
+        console.log('[AuthProvider] No session found, clearing state')
         clearTimeout(loadingTimeout)
         setLoading(false)
         setUser(null)
@@ -97,6 +117,7 @@ export function AuthProvider({ children }) {
       }
     }).catch((error) => {
       debugLog('Error getting session:', error)
+      console.log('[AuthProvider] Exception during session check:', error.message)
       clearTimeout(loadingTimeout)
       setLoading(false)
       setUser(null)
@@ -113,15 +134,23 @@ export function AuthProvider({ children }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         debugLog('Auth state change:', { event, sessionExists: !!session })
+        console.log('[AuthProvider] Auth state change event:', {
+          event,
+          hasSession: !!session,
+          userId: session?.user?.id,
+          currentPath: typeof window !== 'undefined' ? window.location.pathname : 'unknown'
+        })
         clearTimeout(loadingTimeout)
         
         if (event === 'SIGNED_IN' && session?.user) {
           debugLog('Sign in detected, loading profile for:', session.user.id)
+          console.log('[AuthProvider] SIGNED_IN event, loading profile')
           setUser(session.user)
           try {
             await loadUserProfile(session.user.id)
           } catch (err) {
             debugLog('Error loading profile after sign in:', err)
+            console.log('[AuthProvider] Profile loading failed after sign in:', err.message)
             setUser(null)
             setProfile(null)
             setAgency(null)
@@ -130,6 +159,7 @@ export function AuthProvider({ children }) {
           }
         } else if (event === 'SIGNED_OUT' || (event === 'TOKEN_REFRESHED' && !session)) {
           debugLog('Sign out or token refresh failed, clearing state')
+          console.log('[AuthProvider] SIGNED_OUT or failed TOKEN_REFRESH, clearing state')
           setUser(null)
           setProfile(null)
           setAgency(null)
@@ -137,12 +167,14 @@ export function AuthProvider({ children }) {
           router.push('/login')
         } else if (event === 'TOKEN_REFRESHED' && session) {
           debugLog('Token refreshed successfully')
+          console.log('[AuthProvider] TOKEN_REFRESHED successfully')
           if (session.user && !user) {
             setUser(session.user)
             try {
               await loadUserProfile(session.user.id)
             } catch (err) {
               debugLog('Error loading profile after token refresh:', err)
+              console.log('[AuthProvider] Profile loading failed after token refresh:', err.message)
               setUser(null)
               setProfile(null)
               setAgency(null)
@@ -164,6 +196,7 @@ export function AuthProvider({ children }) {
 
   const loadUserProfile = async (userId) => {
     debugLog('loadUserProfile called for:', userId)
+    console.log('[AuthProvider] Loading user profile for:', userId)
     
     try {
       // Create a longer timeout for profile loading
@@ -173,6 +206,8 @@ export function AuthProvider({ children }) {
 
       // Try to get user profile with a timeout
       debugLog('Querying user profile...')
+      console.log('[AuthProvider] Executing profile query...')
+      
       const profileQuery = supabase
         .from('user_profiles')
         .select(`
@@ -195,8 +230,16 @@ export function AuthProvider({ children }) {
       try {
         result = await Promise.race([profileQuery, profileTimeout])
         debugLog('Profile query completed:', { hasData: !!result.data, error: result.error })
+        console.log('[AuthProvider] Profile query result:', { 
+          hasData: !!result.data, 
+          error: result.error?.message || 'none',
+          profileId: result.data?.id,
+          agencyId: result.data?.agency_id,
+          agencyName: result.data?.agencies?.name
+        })
       } catch (timeoutError) {
         debugLog('Profile loading timed out, signing out user')
+        console.log('[AuthProvider] Profile loading timed out after 5s')
         await supabase.auth.signOut()
         setUser(null)
         setProfile(null)
@@ -211,6 +254,7 @@ export function AuthProvider({ children }) {
 
       if (result.error || !result.data) {
         debugLog('Profile error or not found - user not authorized:', result.error)
+        console.log('[AuthProvider] Profile not found or access denied:', result.error?.message || 'no data')
         await supabase.auth.signOut()
         setUser(null)
         setProfile(null)
@@ -224,12 +268,14 @@ export function AuthProvider({ children }) {
       }
 
       debugLog('Successfully loaded profile, setting state')
+      console.log('[AuthProvider] Profile loaded successfully, setting auth state')
       setProfile(result.data)
       setAgency(result.data.agencies || null)
       setLoading(false)
 
     } catch (error) {
       debugLog('Unexpected error in loadUserProfile:', error)
+      console.log('[AuthProvider] Unexpected error loading profile:', error.message)
       await supabase.auth.signOut()
       setUser(null)
       setProfile(null)
