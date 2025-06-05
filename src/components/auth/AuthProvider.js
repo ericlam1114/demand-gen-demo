@@ -41,13 +41,15 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     debugLog('AuthProvider useEffect starting')
     
-    // Set a shorter loading timeout
+    // Set a longer loading timeout for initial load to handle page refreshes
     const loadingTimeout = setTimeout(() => {
       debugLog('Auth loading timeout reached, forcing end of loading state')
       setLoading(false)
-      // If still loading after timeout, redirect to login
-      router.push('/login')
-    }, 4000) // Reduced from 8s to 4s
+      // Only redirect to login if we're not already on the login page
+      if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+        router.push('/login')
+      }
+    }, 10000) // Increased to 10s to handle slower page refreshes
 
     // Get initial session with better error handling
     debugLog('Getting initial session...')
@@ -61,7 +63,10 @@ export function AuthProvider({ children }) {
         setUser(null)
         setProfile(null)
         setAgency(null)
-        router.push('/login')
+        // Only redirect if not already on login page
+        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+          router.push('/login')
+        }
         return
       }
       
@@ -75,7 +80,10 @@ export function AuthProvider({ children }) {
           setUser(null)
           setProfile(null)
           setAgency(null)
-          router.push('/login')
+          // Only redirect if not already on login page
+          if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+            router.push('/login')
+          }
         }).finally(() => {
           clearTimeout(loadingTimeout)
         })
@@ -94,7 +102,10 @@ export function AuthProvider({ children }) {
       setUser(null)
       setProfile(null)
       setAgency(null)
-      router.push('/login')
+      // Only redirect if not already on login page
+      if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+        router.push('/login')
+      }
     })
 
     // Listen for auth changes with improved handling
@@ -155,9 +166,9 @@ export function AuthProvider({ children }) {
     debugLog('loadUserProfile called for:', userId)
     
     try {
-      // Create a shorter timeout promise
+      // Create a longer timeout for profile loading
       const profileTimeout = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Profile loading timeout')), 2000) // Reduced from 4s to 2s
+        setTimeout(() => reject(new Error('Profile loading timeout')), 5000) // Increased from 2s to 5s
       )
 
       // Try to get user profile with a timeout
@@ -191,7 +202,10 @@ export function AuthProvider({ children }) {
         setProfile(null)
         setAgency(null)
         setLoading(false)
-        router.push('/login')
+        // Only redirect if not already on login page
+        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+          router.push('/login')
+        }
         throw timeoutError
       }
 
@@ -202,7 +216,10 @@ export function AuthProvider({ children }) {
         setProfile(null)
         setAgency(null)
         setLoading(false)
-        router.push('/login')
+        // Only redirect if not already on login page
+        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+          router.push('/login')
+        }
         throw new Error('Profile not found or unauthorized')
       }
 
@@ -218,7 +235,10 @@ export function AuthProvider({ children }) {
       setProfile(null)
       setAgency(null)
       setLoading(false)
-      router.push('/login')
+      // Only redirect if not already on login page
+      if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+        router.push('/login')
+      }
       throw error
     }
   }
