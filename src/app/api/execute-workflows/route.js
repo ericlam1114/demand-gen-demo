@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createServerClient } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
 import sgMail from '@sendgrid/mail'
 import Handlebars from 'handlebars'
 import { v4 as uuidv4 } from 'uuid'
@@ -10,7 +10,11 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY)
 
 export async function POST(request) {
   try {
-    const supabase = createServerClient()
+    // Use service role key to bypass RLS for workflow execution
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    )
     const now = new Date()
     
     console.log('Executing workflows at:', now.toISOString())
@@ -170,6 +174,12 @@ export async function POST(request) {
 
       } catch (error) {
         console.error(`Error executing workflow ${workflow.id}:`, error)
+        console.error('Full error details:', {
+          message: error.message,
+          code: error.code,
+          response: error.response?.body,
+          stack: error.stack
+        })
         errors.push(`Workflow ${workflow.id}: ${error.message}`)
       }
     }
@@ -208,6 +218,8 @@ async function skipStep(supabase, workflow, step, now) {
 
 // Execute email step
 async function executeEmailStep(supabase, workflow, step, companySettings, now) {
+  console.log(`[Email Step] Starting for workflow ${workflow.id}, debtor: ${workflow.debtors.name}`)
+  
   const templateData = getTemplateData(workflow, companySettings, step)
 
           // Compile and render template
@@ -262,8 +274,16 @@ async function executeEmailStep(supabase, workflow, step, companySettings, now) 
           }
 
           // Send email
-          await sgMail.send(msg)
-          console.log(`Email sent to ${workflow.debtors.email} for step ${workflow.current_step_number}`)
+          console.log(`[SendGrid] Attempting to send email to ${workflow.debtors.email}`)
+          console.log(`[SendGrid] From: ${msg.from.email}`)
+          try {
+            await sgMail.send(msg)
+            console.log(`[SendGrid] Email sent successfully to ${workflow.debtors.email} for step ${workflow.current_step_number}`)
+          } catch (sgError) {
+            console.error(`[SendGrid] Error:`, sgError)
+            console.error(`[SendGrid] Error response:`, sgError.response?.body)
+            throw sgError
+          }
 
   // Record the letter with SendGrid tracking reference
   const { data: letter } = await supabase
