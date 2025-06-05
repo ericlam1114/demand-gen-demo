@@ -72,27 +72,26 @@ function SettingsContent() {
         .select('*')
         .eq('agency_id', profile.agency_id)
         .limit(1)
-        .single()
 
-      console.log('[Settings] Query result:', { hasData: !!data, error })
+      console.log('[Settings] Query result:', { hasData: !!data, dataLength: data?.length, error })
 
       if (error) {
-        if (error.code === 'PGRST116') {
-          // No settings found - this is OK, we'll create them on save
-          console.log('[Settings] No settings found for agency')
+        console.error('[Settings] Error fetching settings:', error)
+        setError('Failed to load settings. Please try again.')
+      } else {
+        // Handle both array result and potential empty array
+        const settingsData = Array.isArray(data) ? data[0] : data
+        if (settingsData) {
+          // Ensure all values are strings, not null
+          const cleanedData = Object.keys(settingsData).reduce((acc, key) => {
+            acc[key] = settingsData[key] ?? ''
+            return acc
+          }, {})
+          setSettings(cleanedData)
         } else {
-          console.error('[Settings] Error fetching settings:', error)
-          setError('Failed to load settings. Please try again.')
+          console.log('[Settings] No settings found for agency - will create on save')
+          // Keep default empty settings
         }
-      }
-
-      if (data) {
-        // Ensure all values are strings, not null
-        const cleanedData = Object.keys(data).reduce((acc, key) => {
-          acc[key] = data[key] ?? ''
-          return acc
-        }, {})
-        setSettings(cleanedData)
       }
     } catch (error) {
       console.error('[Settings] Error fetching settings:', error)
