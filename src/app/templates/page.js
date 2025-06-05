@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { AppLayout } from '@/components/layout/AppLayout'
+import { PlanRestrictionBanner } from '@/components/ui/plan-restriction-banner'
+import { hasFeature, getUpgradeMessage } from '@/lib/plan-restrictions'
 import { 
   Plus, 
   Edit3, 
@@ -17,12 +19,16 @@ import {
   Trash2,
   AlertTriangle,
   Smartphone,
-  Mailbox
+  Mailbox,
+  Crown
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 function TemplatesContent() {
   const { canDeleteContent, profile } = useAuth()
+  const agency = profile?.agencies
+  const currentPlan = agency?.plan || 'free'
+  
   const [templates, setTemplates] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedTemplate, setSelectedTemplate] = useState(null)
@@ -42,10 +48,13 @@ function TemplatesContent() {
     is_default: false
   })
 
+  // Check feature access
+  const smsEnabled = hasFeature(currentPlan, 'sms')
+
   const channelOptions = [
-    { value: 'email', label: 'Email', icon: Mail, color: 'blue' },
-    { value: 'sms', label: 'SMS', icon: Smartphone, color: 'green' },
-    { value: 'physical', label: 'Physical Mail', icon: Mailbox, color: 'purple' }
+    { value: 'email', label: 'Email', icon: Mail, color: 'blue', enabled: true },
+    { value: 'sms', label: 'SMS', icon: Smartphone, color: 'green', enabled: smsEnabled },
+    { value: 'physical', label: 'Physical Mail', icon: Mailbox, color: 'purple', enabled: true }
   ]
 
   const getChannelInfo = (channel) => {
@@ -361,6 +370,16 @@ function TemplatesContent() {
 
                 {!previewMode ? (
                   <div className="space-y-6">
+                    {/* SMS Restriction Banner */}
+                    {editorData.channel === 'sms' && !smsEnabled && (
+                      <PlanRestrictionBanner
+                        planName={currentPlan}
+                        featureName="sms"
+                        upgradeMessage={getUpgradeMessage(currentPlan, 'sms')}
+                        className="mb-4"
+                      />
+                    )}
+
                     {/* Template Basic Info */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
@@ -373,6 +392,7 @@ function TemplatesContent() {
                           onChange={(e) => setEditorData(prev => ({ ...prev, name: e.target.value }))}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                           placeholder="Enter template name"
+                          disabled={editorData.channel === 'sms' && !smsEnabled}
                         />
                       </div>
                       
@@ -386,11 +406,21 @@ function TemplatesContent() {
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                         >
                           {channelOptions.map(option => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
+                            <option 
+                              key={option.value} 
+                              value={option.value}
+                              disabled={!option.enabled}
+                            >
+                              {option.label} {!option.enabled ? '(Upgrade Required)' : ''}
                             </option>
                           ))}
                         </select>
+                        {editorData.channel === 'sms' && !smsEnabled && (
+                          <div className="flex items-center mt-1 text-xs text-amber-600">
+                            <Crown className="w-3 h-3 mr-1" />
+                            Upgrade to Professional to create SMS templates
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -416,13 +446,26 @@ function TemplatesContent() {
                         {editorData.channel === 'sms' ? 'SMS Content' : 'Content'}
                       </label>
                       {editorData.channel === 'sms' ? (
-                        <textarea
-                          value={editorData.sms_content}
-                          onChange={(e) => setEditorData(prev => ({ ...prev, sms_content: e.target.value }))}
-                          rows={4}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                          placeholder="Enter SMS content"
-                        />
+                        <div className="relative">
+                          <textarea
+                            value={editorData.sms_content}
+                            onChange={(e) => setEditorData(prev => ({ ...prev, sms_content: e.target.value }))}
+                            rows={4}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 ${
+                              !smsEnabled ? 'opacity-50 cursor-not-allowed' : ''
+                            }`}
+                            placeholder={smsEnabled ? "Enter SMS content" : "Upgrade to Professional to create SMS templates"}
+                            disabled={!smsEnabled}
+                          />
+                          {!smsEnabled && (
+                            <div className="absolute inset-0 bg-amber-50/80 rounded-md flex items-center justify-center">
+                              <div className="text-center">
+                                <Crown className="w-6 h-6 text-amber-600 mx-auto mb-2" />
+                                <p className="text-sm text-amber-700 font-medium">SMS templates require Professional plan</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       ) : (
                         <textarea
                           value={editorData.html_content}
@@ -442,6 +485,7 @@ function TemplatesContent() {
                         checked={editorData.is_default}
                         onChange={(e) => setEditorData(prev => ({ ...prev, is_default: e.target.checked }))}
                         className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        disabled={editorData.channel === 'sms' && !smsEnabled}
                       />
                       <label htmlFor="is_default" className="ml-2 block text-sm text-gray-900">
                         Set as default template for this channel
@@ -459,7 +503,10 @@ function TemplatesContent() {
                       >
                         Cancel
                       </Button>
-                      <Button onClick={saveTemplate}>
+                      <Button 
+                        onClick={saveTemplate}
+                        disabled={editorData.channel === 'sms' && !smsEnabled}
+                      >
                         <Save className="w-4 h-4 mr-2" />
                         {isEditing ? 'Update Template' : 'Create Template'}
                       </Button>

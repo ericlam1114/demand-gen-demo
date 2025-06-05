@@ -11,7 +11,7 @@ const navigation = [
   { name: "Templates", href: "/templates", icon: FileText },
   { name: "Workflows", href: "/workflows", icon: Workflow },
   { name: "Data Sources", href: "/upload", icon: Database },
-  { name: "Integration Guide", href: "/integration-guide", icon: Zap },
+  // { name: "Integration Guide", href: "/integration-guide", icon: Zap },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 

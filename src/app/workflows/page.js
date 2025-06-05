@@ -5,6 +5,9 @@ import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { AppLayout } from '@/components/layout/AppLayout'
+import { useAuth } from '@/components/auth/AuthProvider'
+import { PlanRestrictionBanner, PlanFeatureLock } from '@/components/ui/plan-restriction-banner'
+import { hasFeature, getAllowedStepTypes, getUpgradeMessage } from '@/lib/plan-restrictions'
 import { 
   Plus, 
   Mail, 
@@ -24,7 +27,8 @@ import {
   Calendar,
   DollarSign,
   Star,
-  StarOff
+  StarOff,
+  Crown
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -35,7 +39,8 @@ const WORKFLOW_STEPS = [
     icon: Mail,
     color: 'bg-blue-500',
     description: 'Send demand letter via email',
-    channels: ['email']
+    channels: ['email'],
+    requiredPlan: 'free'
   },
   {
     id: 'sms',
@@ -43,7 +48,8 @@ const WORKFLOW_STEPS = [
     icon: MessageSquare,
     color: 'bg-green-500',
     description: 'Send reminder via SMS',
-    channels: ['sms']
+    channels: ['sms'],
+    requiredPlan: 'professional'
   },
   {
     id: 'physical',
@@ -51,7 +57,8 @@ const WORKFLOW_STEPS = [
     icon: MapPin,
     color: 'bg-purple-500',
     description: 'Send physical letter',
-    channels: ['physical']
+    channels: ['physical'],
+    requiredPlan: 'free'
   },
   {
     id: 'wait',
@@ -59,11 +66,16 @@ const WORKFLOW_STEPS = [
     icon: Clock,
     color: 'bg-gray-500',
     description: 'Wait for specified time',
-    channels: ['wait']
+    channels: ['wait'],
+    requiredPlan: 'professional'
   }
 ]
 
 function WorkflowsContent() {
+  const { profile } = useAuth()
+  const agency = profile?.agencies
+  const currentPlan = agency?.plan || 'free'
+  
   const [workflows, setWorkflows] = useState([])
   const [selectedWorkflow, setSelectedWorkflow] = useState(null)
   const [workflowSteps, setWorkflowSteps] = useState([])
@@ -79,6 +91,10 @@ function WorkflowsContent() {
     is_default: false,
     is_active: true
   })
+
+  // Check if workflows feature is available
+  const workflowsEnabled = hasFeature(currentPlan, 'workflows')
+  const allowedStepTypes = getAllowedStepTypes(currentPlan)
 
   useEffect(() => {
     fetchWorkflows()
@@ -321,6 +337,16 @@ function WorkflowsContent() {
           <p className="mt-2 text-gray-600">Create and manage automated demand letter workflows</p>
         </div>
 
+        {/* Plan Restriction Banner for Free Tier */}
+        {!workflowsEnabled && (
+          <PlanRestrictionBanner
+            planName={currentPlan}
+            featureName="workflows"
+            upgradeMessage={getUpgradeMessage(currentPlan, 'workflows')}
+            className="mb-6"
+          />
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           {/* Workflow List */}
           <div className="lg:col-span-1">
@@ -328,9 +354,15 @@ function WorkflowsContent() {
               <div className="p-4 border-b border-gray-200">
                 <div className="flex items-center justify-between">
                   <h3 className="font-medium text-gray-900">Workflows</h3>
-                  <Button size="sm" onClick={createNewWorkflow}>
-                    <Plus className="w-4 h-4" />
-                  </Button>
+                  {workflowsEnabled ? (
+                    <Button size="sm" onClick={createNewWorkflow}>
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  ) : (
+                    <Button size="sm" disabled className="opacity-50 cursor-not-allowed">
+                      <Crown className="w-4 h-4" />
+                    </Button>
+                  )}
                 </div>
               </div>
               <div className="p-4 space-y-2">
@@ -341,8 +373,8 @@ function WorkflowsContent() {
                       selectedWorkflow?.id === workflow.id
                         ? 'bg-blue-100 text-blue-700'
                         : 'hover:bg-gray-100'
-                    }`}
-                    onClick={() => selectWorkflow(workflow)}
+                    } ${!workflowsEnabled ? 'opacity-50 pointer-events-none' : ''}`}
+                    onClick={() => workflowsEnabled && selectWorkflow(workflow)}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex-1 min-w-0">
@@ -354,14 +386,17 @@ function WorkflowsContent() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          toggleDefault(workflow.id)
+                          if (workflowsEnabled) {
+                            toggleDefault(workflow.id)
+                          }
                         }}
                         className={`ml-2 p-1 rounded ${
                           workflow.is_default
                             ? 'text-yellow-500 hover:text-yellow-600'
                             : 'text-gray-400 hover:text-gray-600'
-                        }`}
+                        } ${!workflowsEnabled ? 'pointer-events-none' : ''}`}
                         title={workflow.is_default ? 'Default workflow' : 'Set as default'}
+                        disabled={!workflowsEnabled}
                       >
                         {workflow.is_default ? (
                           <Star className="w-4 h-4 fill-current" />
@@ -380,7 +415,9 @@ function WorkflowsContent() {
                 {workflows.length === 0 && (
                   <div className="text-center py-6 text-gray-500">
                     <p className="text-sm">No workflows yet</p>
-                    <p className="text-xs mt-1">Create your first workflow</p>
+                    <p className="text-xs mt-1">
+                      {workflowsEnabled ? 'Create your first workflow' : 'Upgrade to create workflows'}
+                    </p>
                   </div>
                 )}
               </div>
@@ -389,7 +426,18 @@ function WorkflowsContent() {
 
           {/* Workflow Editor */}
           <div className="lg:col-span-3">
-            {selectedWorkflow || isEditing ? (
+            {!workflowsEnabled ? (
+              <PlanFeatureLock
+                planName={currentPlan}
+                featureName="workflows"
+                upgradeMessage={getUpgradeMessage(currentPlan, 'workflows')}
+              >
+                <div className="bg-white rounded-lg shadow p-12 text-center">
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">Workflow Builder</h3>
+                  <p className="text-gray-500 mb-6">Create automated workflows with multiple steps and follow-ups.</p>
+                </div>
+              </PlanFeatureLock>
+            ) : selectedWorkflow || isEditing ? (
               <div className="bg-white rounded-lg shadow">
                 <div className="p-6 border-b border-gray-200">
                   <div className="flex items-center justify-between">
@@ -482,8 +530,11 @@ function WorkflowsContent() {
                               {index + 1}
                             </div>
                             <div>
-                              <div className="font-medium text-gray-900">
+                              <div className="font-medium text-gray-900 flex items-center gap-2">
                                 Step {index + 1}: {WORKFLOW_STEPS.find(s => s.id === step.step_type)?.name || step.step_type}
+                                {!allowedStepTypes.includes(step.step_type) && (
+                                  <Crown className="w-4 h-4 text-amber-600" title="Upgrade required for this step type" />
+                                )}
                               </div>
                               <div className="text-sm text-gray-500">
                                 {index === 0 ? 'Executes immediately' : `Executes ${step.delay_days} days${step.delay_hours ? ` ${step.delay_hours} hours` : ''} after previous step`}
@@ -513,11 +564,18 @@ function WorkflowsContent() {
                                 onChange={(e) => updateStep(index, 'step_type', e.target.value)}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                               >
-                                {WORKFLOW_STEPS.map(stepType => (
-                                  <option key={stepType.id} value={stepType.id}>
-                                    {stepType.name}
-                                  </option>
-                                ))}
+                                {WORKFLOW_STEPS.map(stepType => {
+                                  const isAllowed = allowedStepTypes.includes(stepType.id)
+                                  return (
+                                    <option 
+                                      key={stepType.id} 
+                                      value={stepType.id}
+                                      disabled={!isAllowed}
+                                    >
+                                      {stepType.name} {!isAllowed ? '(Upgrade Required)' : ''}
+                                    </option>
+                                  )
+                                })}
                               </select>
                             </div>
 
