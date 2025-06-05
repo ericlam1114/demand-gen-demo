@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Search, MoreHorizontal, Eye, CheckCircle, RotateCcw, Upload, X, FileText, Calendar, Mail, DollarSign, User, MapPin, FolderOpen, FolderCheck, Clock, TrendingUp, ChevronDown, Star, Play, Square, Crown } from 'lucide-react'
+import { Search, MoreHorizontal, Eye, CheckCircle, RotateCcw, Upload, X, FileText, Calendar, Mail, DollarSign, User, MapPin, FolderOpen, FolderCheck, Clock, TrendingUp, ChevronDown, Star, Play, Square, Crown, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate, getStatusColor, getStatusIcon } from '@/lib/utils'
@@ -818,6 +818,40 @@ function DashboardContent() {
     }
   }
 
+  const handleDeleteDebtor = async (debtorId, debtorName) => {
+    if (!debtorId) {
+      toast.error('Unable to delete - debtor ID not found')
+      return
+    }
+
+    if (!confirm(`Are you sure you want to delete ${debtorName}? This will remove all associated letters and workflow data.`)) {
+      return
+    }
+
+    try {
+      // First stop any active workflows
+      await stopWorkflowForDebtor(debtorId, 'deleted')
+
+      // Delete the debtor (cascades to letters, workflow enrollments, etc.)
+      const { error } = await supabase
+        .from('debtors')
+        .delete()
+        .eq('id', debtorId)
+
+      if (error) {
+        console.error('Error deleting debtor:', error)
+        toast.error('Failed to delete debtor: ' + error.message)
+        return
+      }
+
+      toast.success(`${debtorName} has been deleted`)
+      await fetchLetters()
+    } catch (error) {
+      console.error('Error deleting debtor:', error)
+      toast.error('Failed to delete debtor')
+    }
+  }
+
   // Get default workflows for quick actions
   const defaultWorkflows = workflows.filter(w => w.is_default)
   const hasMultipleDefaults = defaultWorkflows.length > 1
@@ -1473,56 +1507,77 @@ function DashboardContent() {
                   </div>
                 </div>
 
-                <div className="mt-8 flex justify-end space-x-3">
-                  {/* Mark/Unmark as Paid */}
-                  {selectedPerson.letter.status !== 'paid' ? (
-                    <Button 
+                <div className="mt-8 flex justify-between items-center">
+                  {/* Delete Button - Left Side */}
+                  <div>
+                    <Button
+                      variant="outline"
                       onClick={() => {
-                        markAsPaid(selectedPerson.letter.id, selectedPerson.name)
+                        setShowPersonModal(false)
+                        // Small delay to let modal close before showing confirm
+                        setTimeout(() => {
+                          handleDeleteDebtor(selectedPerson.letter.debtors?.id, selectedPerson.name)
+                        }, 100)
+                      }}
+                      className="flex items-center gap-2 text-red-600 border-red-300 hover:bg-red-50"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Delete Debtor
+                    </Button>
+                  </div>
+
+                  {/* Right Side Actions */}
+                  <div className="flex space-x-3">
+                    {/* Mark/Unmark as Paid */}
+                    {selectedPerson.letter.status !== 'paid' ? (
+                      <Button 
+                        onClick={() => {
+                          markAsPaid(selectedPerson.letter.id, selectedPerson.name)
+                          setShowPersonModal(false)
+                        }}
+                        className="flex items-center gap-2"
+                      >
+                        <CheckCircle className="w-4 h-4" />
+                        Mark as Paid
+                      </Button>
+                    ) : (
+                      <Button 
+                        variant="outline"
+                        onClick={() => setShowUnpayConfirm(selectedPerson.letter.id)}
+                        className="flex items-center gap-2 text-yellow-700 border-yellow-300 hover:bg-yellow-50"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                        Unmark as Paid
+                      </Button>
+                    )}
+
+                    {/* Escalation Button */}
+                    {selectedPerson.letter.status !== 'escalated' && selectedPerson.letter.status !== 'paid' && (
+                      <Button 
+                        variant="outline"
+                        onClick={() => setShowEscalateConfirm(selectedPerson.letter.id)}
+                        className="flex items-center gap-2 text-red-700 border-red-300 hover:bg-red-50"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 18.5c-.77.833.192 2.5 1.732 2.5z" />
+                        </svg>
+                        Escalate Case
+                      </Button>
+                    )}
+                    
+                    {/* Resend Letter */}
+                    <Button 
+                      variant="outline"
+                      onClick={() => {
+                        resendLetter(selectedPerson.letter.id, selectedPerson.name)
                         setShowPersonModal(false)
                       }}
                       className="flex items-center gap-2"
                     >
-                      <CheckCircle className="w-4 h-4" />
-                      Mark as Paid
-                    </Button>
-                  ) : (
-                    <Button 
-                      variant="outline"
-                      onClick={() => setShowUnpayConfirm(selectedPerson.letter.id)}
-                      className="flex items-center gap-2 text-yellow-700 border-yellow-300 hover:bg-yellow-50"
-                    >
                       <RotateCcw className="w-4 h-4" />
-                      Unmark as Paid
+                      Resend Letter
                     </Button>
-                  )}
-
-                  {/* Escalation Button */}
-                  {selectedPerson.letter.status !== 'escalated' && selectedPerson.letter.status !== 'paid' && (
-                    <Button 
-                      variant="outline"
-                      onClick={() => setShowEscalateConfirm(selectedPerson.letter.id)}
-                      className="flex items-center gap-2 text-red-700 border-red-300 hover:bg-red-50"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 18.5c-.77.833.192 2.5 1.732 2.5z" />
-                      </svg>
-                      Escalate Case
-                    </Button>
-                  )}
-                  
-                  {/* Resend Letter */}
-                  <Button 
-                    variant="outline"
-                    onClick={() => {
-                      resendLetter(selectedPerson.letter.id, selectedPerson.name)
-                      setShowPersonModal(false)
-                    }}
-                    className="flex items-center gap-2"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    Resend Letter
-                  </Button>
+                  </div>
                 </div>
               </div>
             </div>
