@@ -56,7 +56,7 @@ export async function POST(request) {
     // Get workflow details for letter generation
     const { data: workflow, error: workflowFetchError } = await supabase
       .from('workflows')
-      .select('id, name, steps')
+      .select('id, name')
       .eq('id', targetWorkflowId)
       .single()
 
