@@ -68,9 +68,9 @@ export async function POST(request) {
 
     // Get the first step of the workflow
     const firstStep = workflow.steps?.[0]
-    if (!firstStep || firstStep.type !== 'send_letter') {
+    if (!firstStep || !['send_letter', 'email'].includes(firstStep.type)) {
       return NextResponse.json({ 
-        error: 'Workflow must have a send_letter step as the first step' 
+        error: 'Workflow must have an email or send_letter step as the first step' 
       }, { status: 400 })
     }
 
