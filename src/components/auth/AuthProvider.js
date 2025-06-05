@@ -1,6 +1,7 @@
+// src/components/auth/AuthProvider.js
 'use client'
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
@@ -21,103 +22,9 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
   const router = useRouter()
 
-  // Debug logging
-  const debugLog = (message, data = null) => {
-    console.log(`[AuthProvider] ${message}`, data)
-  }
-
-  // Clear any potentially cached demo data on mount
-  useEffect(() => {
-    // Clear any localStorage or sessionStorage that might contain demo data
-    if (typeof window !== 'undefined') {
-      // Remove any potential demo data from storage
-      localStorage.removeItem('demo-profile')
-      localStorage.removeItem('demo-agency')
-      sessionStorage.removeItem('demo-profile')
-      sessionStorage.removeItem('demo-agency')
-    }
-  }, [])
-
-  useEffect(() => {
-    debugLog('AuthProvider useEffect starting')
-    
-    // Simple loading timeout - much shorter and simpler
-    const loadingTimeout = setTimeout(() => {
-      debugLog('Auth loading timeout - setting loading to false')
-      setLoading(false)
-    }, 5000) // Just 5 seconds, no complex logic
-
-    // Get initial session
-    debugLog('Getting initial session...')
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      debugLog('Initial session result:', { hasSession: !!session, error })
-      
-      if (error) {
-        debugLog('Session error:', error)
-        clearTimeout(loadingTimeout)
-        setLoading(false)
-        setUser(null)
-        setProfile(null)
-        setAgency(null)
-        return
-      }
-      
-      if (session?.user) {
-        debugLog('Setting user from session:', session.user.id)
-        setUser(session.user)
-        loadUserProfile(session.user.id).finally(() => {
-          clearTimeout(loadingTimeout)
-          setLoading(false)
-        })
-      } else {
-        debugLog('No session found')
-        clearTimeout(loadingTimeout)
-        setLoading(false)
-        setUser(null)
-        setProfile(null)
-        setAgency(null)
-      }
-    }).catch((error) => {
-      debugLog('Error getting session:', error)
-      clearTimeout(loadingTimeout)
-      setLoading(false)
-      setUser(null)
-      setProfile(null)
-      setAgency(null)
-    })
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        debugLog('Auth state change:', { event, sessionExists: !!session })
-        
-        if (event === 'SIGNED_IN' && session?.user) {
-          setUser(session.user)
-          await loadUserProfile(session.user.id)
-          setLoading(false)
-        } else if (event === 'SIGNED_OUT') {
-          setUser(null)
-          setProfile(null)
-          setAgency(null)
-          setLoading(false)
-        } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-          setUser(session.user)
-          if (!profile) {
-            await loadUserProfile(session.user.id)
-          }
-          setLoading(false)
-        }
-      }
-    )
-
-    return () => {
-      clearTimeout(loadingTimeout)
-      subscription.unsubscribe()
-    }
-  }, [router])
-
-  const loadUserProfile = async (userId) => {
-    debugLog('loadUserProfile called for:', userId)
+  // Make loadUserProfile stable with useCallback
+  const loadUserProfile = useCallback(async (userId) => {
+    console.log('[AuthProvider] loadUserProfile called for:', userId)
     
     try {
       const { data, error } = await supabase
@@ -138,61 +45,120 @@ export function AuthProvider({ children }) {
         .single()
 
       if (error || !data) {
-        debugLog('Profile error or not found:', error)
-        setUser(null)
+        console.log('[AuthProvider] Profile error or not found:', error)
+        // Don't clear user here - let them stay logged in
         setProfile(null)
         setAgency(null)
+        // Redirect to onboarding if no profile exists
+        if (error?.code === 'PGRST116') {
+          router.push('/onboarding')
+        }
         return
       }
 
-      debugLog('Profile loaded successfully')
+      console.log('[AuthProvider] Profile loaded successfully')
       setProfile(data)
       setAgency(data.agencies || null)
 
     } catch (error) {
-      debugLog('Error in loadUserProfile:', error)
-      setUser(null)
+      console.error('[AuthProvider] Error in loadUserProfile:', error)
       setProfile(null)
       setAgency(null)
     }
-  }
+  }, [router])
 
-  // Add this updated signIn method to your AuthProvider
-
-const signIn = async (email, password) => {
-  debugLog('signIn called for:', email)
-  
-  try {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    })
+  useEffect(() => {
+    let mounted = true
+    console.log('[AuthProvider] useEffect starting')
     
-    debugLog('SignIn result:', { hasData: !!data, error })
-    
-    if (error) {
-      return { data, error }
+    // Get initial session
+    const initializeAuth = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession()
+        
+        if (error) {
+          console.error('[AuthProvider] Session error:', error)
+          if (mounted) {
+            setUser(null)
+            setProfile(null)
+            setAgency(null)
+            setLoading(false)
+          }
+          return
+        }
+        
+        if (session?.user && mounted) {
+          console.log('[AuthProvider] Setting user from session:', session.user.id)
+          setUser(session.user)
+          await loadUserProfile(session.user.id)
+        }
+        
+        if (mounted) {
+          setLoading(false)
+        }
+      } catch (error) {
+        console.error('[AuthProvider] Error initializing auth:', error)
+        if (mounted) {
+          setLoading(false)
+        }
+      }
     }
+
+    initializeAuth()
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('[AuthProvider] Auth state change:', { event, sessionExists: !!session })
+        
+        if (!mounted) return
+        
+        if (event === 'SIGNED_IN' && session?.user) {
+          setUser(session.user)
+          await loadUserProfile(session.user.id)
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null)
+          setProfile(null)
+          setAgency(null)
+          router.push('/login')
+        } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+          setUser(session.user)
+          // Don't reload profile on token refresh unless needed
+        }
+      }
+    )
+
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
+  }, [loadUserProfile, router])
+
+  const signIn = async (email, password) => {
+    console.log('[AuthProvider] signIn called for:', email)
     
-    // If sign in was successful, wait a bit for the auth state change
-    // to be processed by the onAuthStateChange listener
-    if (data?.user) {
-      debugLog('Sign in successful, user:', data.user.id)
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      })
       
-      // Give the auth state change listener time to process
-      // This helps ensure the profile starts loading
-      await new Promise(resolve => setTimeout(resolve, 100))
+      console.log('[AuthProvider] SignIn result:', { hasData: !!data, error })
+      
+      if (error) {
+        return { data, error }
+      }
+      
+      // The auth state change listener will handle the rest
+      return { data, error }
+    } catch (err) {
+      console.error('[AuthProvider] SignIn exception:', err)
+      return { data: null, error: err }
     }
-    
-    return { data, error }
-  } catch (err) {
-    debugLog('SignIn exception:', err)
-    return { data: null, error: err }
   }
-}
 
   const signUp = async (email, password, metadata = {}) => {
-    debugLog('signUp called for:', email)
+    console.log('[AuthProvider] signUp called for:', email)
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -200,31 +166,17 @@ const signIn = async (email, password) => {
         data: metadata
       }
     })
-    debugLog('SignUp result:', { hasData: !!data, error })
+    console.log('[AuthProvider] SignUp result:', { hasData: !!data, error })
     return { data, error }
   }
 
   const signOut = async () => {
-    debugLog('signOut called')
-    
-    // Clear all state immediately
-    setUser(null)
-    setProfile(null)
-    setAgency(null)
-    setLoading(false)
-    
-    // Clear any browser storage
-    if (typeof window !== 'undefined') {
-      localStorage.clear()
-      sessionStorage.clear()
-    }
+    console.log('[AuthProvider] signOut called')
     
     const { error } = await supabase.auth.signOut()
-    debugLog('SignOut result:', { error })
+    console.log('[AuthProvider] SignOut result:', { error })
     
-    // Force redirect to login
-    router.push('/login')
-    
+    // The auth state change listener will handle cleanup
     return { error }
   }
 
@@ -233,7 +185,6 @@ const signIn = async (email, password) => {
   const canManageTeam = () => isManager()
   const canDeleteContent = () => isManager()
 
-  // Add debug info to the context value
   const value = {
     user,
     profile,
@@ -246,26 +197,12 @@ const signIn = async (email, password) => {
     isManager,
     canManageTeam,
     canDeleteContent,
-    loadUserProfile,
-    // Debug info
-    _debug: {
-      hasUser: !!user,
-      hasProfile: !!profile,
-      hasAgency: !!agency,
-      loading
-    }
+    loadUserProfile
   }
-
-  debugLog('AuthProvider render', { 
-    hasUser: !!user, 
-    hasProfile: !!profile, 
-    hasAgency: !!agency, 
-    loading 
-  })
 
   return (
     <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   )
-} 
+}

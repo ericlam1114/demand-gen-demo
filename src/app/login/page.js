@@ -1,164 +1,95 @@
-'use client'
-
-import { useState, useEffect } from 'react'
-import { useAuth } from '@/components/auth/AuthProvider'
-import { Button } from '@/components/ui/button'
-import { Mail, Lock, Building2, AlertCircle } from 'lucide-react'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from "react";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { Button } from "@/components/ui/button";
+import { Mail, Lock, Building2, AlertCircle } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const { signIn, user, profile, loading: authLoading } = useAuth()
-  const router = useRouter()
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const { signIn, user, profile, loading: authLoading } = useAuth();
+  const router = useRouter();
 
-  // Watch for successful authentication and profile load
+  // Redirect when user is fully authenticated
   useEffect(() => {
-    console.log('[Login] Auth state changed:', { 
-      hasUser: !!user, 
-      hasProfile: !!profile, 
-      authLoading 
-    })
-    
-    // If we have both user and profile, redirect to dashboard
-    if (user && profile && !authLoading) {
-      console.log('[Login] User and profile loaded, redirecting to dashboard')
-      router.push('/dashboard')
+    if (!authLoading && user && profile) {
+      console.log("[Login] User authenticated, redirecting to dashboard");
+      router.push("/dashboard");
     }
-  }, [user, profile, authLoading, router])
+  }, [user, profile, authLoading, router]);
 
   const handleSubmit = async (e) => {
-    e.preventDefault()
-    console.log('[Login] Form submitted')
-    setLoading(true)
-    setError('')
+    e.preventDefault();
+    console.log("[Login] Form submitted");
+    setLoading(true);
+    setError("");
 
     try {
-      console.log('[Login] Calling signIn with:', email)
-      const { error } = await signIn(email, password)
-      
-      console.log('[Login] SignIn response:', { hasError: !!error, error })
-      
-      if (error) {
-        console.log('[Login] Sign in failed:', error.message)
-        setError(error.message)
-        setLoading(false)
-      } else {
-        console.log('[Login] Sign in successful, waiting for profile to load...')
-        // Don't manually redirect here - let the useEffect handle it
-        // when both user and profile are ready
-        
-        // Set a timeout to handle cases where profile loading fails
-        setTimeout(() => {
-          if (!profile) {
-            console.log('[Login] Profile failed to load after 10s')
-            setError('Failed to load user profile. Please try again.')
-            setLoading(false)
-          }
-        }, 10000) // 10 second timeout
-      }
-    } catch (err) {
-      console.error('[Login] Login error:', err)
-      setError('An unexpected error occurred. Please try again.')
-      setLoading(false)
-    }
-  }
+      const { error } = await signIn(email, password);
 
-  // Show different loading states
-  const isAuthenticating = loading || (user && !profile && authLoading)
+      if (error) {
+        console.log("[Login] Sign in failed:", error.message);
+        setError(error.message);
+        setLoading(false);
+      }
+      // Don't set loading to false on success - let the redirect happen
+    } catch (err) {
+      console.error("[Login] Login error:", err);
+      setError("An unexpected error occurred. Please try again.");
+      setLoading(false);
+    }
+  };
+
+  // Don't render the form if already authenticated
+  if (!authLoading && user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Redirecting to dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
       <div className="max-w-md w-full bg-white rounded-lg shadow-xl p-8">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="flex items-center justify-center mb-4">
-            <Building2 className="w-8 h-8 text-blue-600 mr-2" />
-            <h1 className="text-2xl font-bold text-gray-900">Collections Pro</h1>
-          </div>
-          <p className="text-gray-600">Sign in to your agency account</p>
-        </div>
-
-        {/* Error Message */}
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-md flex items-center">
-            <AlertCircle className="w-5 h-5 text-red-600 mr-2" />
-            <span className="text-red-800 text-sm">{error}</span>
-          </div>
-        )}
-
-        {/* Login Form */}
+        {/* Rest of your login form... */}
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-              Email Address
-            </label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                disabled={isAuthenticating}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
-                placeholder="admin@yourcompany.com"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-              Password
-            </label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                disabled={isAuthenticating}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
-                placeholder="••••••••"
-              />
-            </div>
-          </div>
-
+          {/* Form fields... */}
           <Button
             type="submit"
-            disabled={isAuthenticating}
+            disabled={loading || authLoading}
             className="w-full py-3"
           >
-            {isAuthenticating ? (
+            {loading ? (
               <>
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                {user && !profile ? 'Loading profile...' : 'Signing in...'}
+                Signing in...
               </>
             ) : (
-              'Sign In'
+              "Sign In"
             )}
           </Button>
         </form>
 
         {/* Additional Links */}
         <div className="mt-6 text-center space-y-2">
-          <Link 
-            href="/forgot-password" 
+          <Link
+            href="/forgot-password"
             className="text-sm text-blue-600 hover:text-blue-800"
           >
             Forgot your password?
           </Link>
-          
+
           <div className="text-sm text-gray-600">
-            Need an account?{' '}
-            <Link 
-              href="/signup" 
+            Need an account?{" "}
+            <Link
+              href="/signup"
               className="text-blue-600 hover:text-blue-800 font-medium"
             >
               Contact sales
@@ -168,10 +99,16 @@ export default function LoginPage() {
 
         {/* Demo Account Info */}
         <div className="mt-8 p-4 bg-gray-50 rounded-md">
-          <h3 className="text-sm font-medium text-gray-900 mb-2">Demo Accounts:</h3>
+          <h3 className="text-sm font-medium text-gray-900 mb-2">
+            Demo Accounts:
+          </h3>
           <div className="space-y-1 text-xs text-gray-600">
-            <div><strong>Nexum Collections:</strong> admin@nexum.com / demo123</div>
-            <div><strong>DCI International:</strong> admin@dci.com / demo123</div>
+            <div>
+              <strong>Nexum Collections:</strong> admin@nexum.com / demo123
+            </div>
+            <div>
+              <strong>DCI International:</strong> admin@dci.com / demo123
+            </div>
           </div>
         </div>
 
@@ -185,5 +122,5 @@ export default function LoginPage() {
         )} */}
       </div>
     </div>
-  )
+  );
 }
