@@ -41,23 +41,29 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     debugLog('AuthProvider useEffect starting')
     
-    // Set a longer loading timeout for initial load to handle page refreshes
-    const loadingTimeout = setTimeout(() => {
-      debugLog('Auth loading timeout reached, forcing end of loading state')
-      console.log('[AuthProvider] TIMEOUT: Auth loading timeout after 10s, current state:', {
-        hasUser: !!user,
-        hasProfile: !!profile,
-        hasAgency: !!agency,
-        loading,
-        currentPath: typeof window !== 'undefined' ? window.location.pathname : 'unknown'
-      })
-      setLoading(false)
-      // Only redirect to login if we're not already on the login page
-      if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-        debugLog('Redirecting to login due to timeout')
-        router.push('/login')
-      }
-    }, 10000) // Increased to 10s to handle slower page refreshes
+    // Don't set aggressive timeouts on login page
+    const isLoginPage = typeof window !== 'undefined' && window.location.pathname.includes('/login')
+    
+    // Set a timeout only if not on login page
+    let loadingTimeout
+    if (!isLoginPage) {
+      loadingTimeout = setTimeout(() => {
+        debugLog('Auth loading timeout reached, forcing end of loading state')
+        console.log('[AuthProvider] TIMEOUT: Auth loading timeout after 10s, current state:', {
+          hasUser: !!user,
+          hasProfile: !!profile,
+          hasAgency: !!agency,
+          loading,
+          currentPath: typeof window !== 'undefined' ? window.location.pathname : 'unknown'
+        })
+        setLoading(false)
+        // Only redirect if we're not already on the login page
+        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+          debugLog('Redirecting to login due to timeout')
+          router.push('/login')
+        }
+      }, 15000) // Increased timeout and only when not on login page
+    }
 
     // Get initial session with better error handling
     debugLog('Getting initial session...')
@@ -73,18 +79,14 @@ export function AuthProvider({ children }) {
       })
       
       if (error) {
-        debugLog('Session error, redirecting to login:', error)
-        console.log('[AuthProvider] Session error, clearing state and redirecting:', error.message)
-        clearTimeout(loadingTimeout)
+        debugLog('Session error, clearing state:', error)
+        console.log('[AuthProvider] Session error, clearing state:', error.message)
+        if (loadingTimeout) clearTimeout(loadingTimeout)
         setLoading(false)
         setUser(null)
         setProfile(null)
         setAgency(null)
-        // Only redirect if not already on login page
-        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-          router.push('/login')
-        }
-        return
+        return // Don't redirect on login page
       }
       
       if (session?.user) {
@@ -94,22 +96,22 @@ export function AuthProvider({ children }) {
         loadUserProfile(session.user.id).catch(err => {
           debugLog('Error loading profile:', err)
           console.log('[AuthProvider] Profile loading failed:', err.message)
-          clearTimeout(loadingTimeout)
+          if (loadingTimeout) clearTimeout(loadingTimeout)
           setLoading(false)
           setUser(null)
           setProfile(null)
           setAgency(null)
-          // Only redirect if not already on login page
-          if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+          // Only redirect if not on login page
+          if (!isLoginPage) {
             router.push('/login')
           }
         }).finally(() => {
-          clearTimeout(loadingTimeout)
+          if (loadingTimeout) clearTimeout(loadingTimeout)
         })
       } else {
         debugLog('No session, setting loading false')
         console.log('[AuthProvider] No session found, clearing state')
-        clearTimeout(loadingTimeout)
+        if (loadingTimeout) clearTimeout(loadingTimeout)
         setLoading(false)
         setUser(null)
         setProfile(null)
@@ -118,15 +120,11 @@ export function AuthProvider({ children }) {
     }).catch((error) => {
       debugLog('Error getting session:', error)
       console.log('[AuthProvider] Exception during session check:', error.message)
-      clearTimeout(loadingTimeout)
+      if (loadingTimeout) clearTimeout(loadingTimeout)
       setLoading(false)
       setUser(null)
       setProfile(null)
       setAgency(null)
-      // Only redirect if not already on login page
-      if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-        router.push('/login')
-      }
     })
 
     // Listen for auth changes with improved handling
@@ -140,7 +138,7 @@ export function AuthProvider({ children }) {
           userId: session?.user?.id,
           currentPath: typeof window !== 'undefined' ? window.location.pathname : 'unknown'
         })
-        clearTimeout(loadingTimeout)
+        if (loadingTimeout) clearTimeout(loadingTimeout)
         
         if (event === 'SIGNED_IN' && session?.user) {
           debugLog('Sign in detected, loading profile for:', session.user.id)
@@ -155,16 +153,22 @@ export function AuthProvider({ children }) {
             setProfile(null)
             setAgency(null)
             setLoading(false)
-            router.push('/login')
+            // Don't redirect on login page
+            if (!isLoginPage) {
+              router.push('/login')
+            }
           }
-        } else if (event === 'SIGNED_OUT' || (event === 'TOKEN_REFRESHED' && !session)) {
-          debugLog('Sign out or token refresh failed, clearing state')
-          console.log('[AuthProvider] SIGNED_OUT or failed TOKEN_REFRESH, clearing state')
+        } else if (event === 'SIGNED_OUT') {
+          debugLog('Sign out detected, clearing state')
+          console.log('[AuthProvider] SIGNED_OUT event, clearing state')
           setUser(null)
           setProfile(null)
           setAgency(null)
           setLoading(false)
-          router.push('/login')
+          // Only redirect to login if not already there
+          if (!isLoginPage) {
+            router.push('/login')
+          }
         } else if (event === 'TOKEN_REFRESHED' && session) {
           debugLog('Token refreshed successfully')
           console.log('[AuthProvider] TOKEN_REFRESHED successfully')
@@ -179,7 +183,6 @@ export function AuthProvider({ children }) {
               setProfile(null)
               setAgency(null)
               setLoading(false)
-              router.push('/login')
             }
           }
         }
@@ -189,7 +192,7 @@ export function AuthProvider({ children }) {
 
     return () => {
       debugLog('Cleaning up auth provider')
-      clearTimeout(loadingTimeout)
+      if (loadingTimeout) clearTimeout(loadingTimeout)
       subscription.unsubscribe()
     }
   }, [router])
