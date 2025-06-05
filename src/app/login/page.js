@@ -174,9 +174,9 @@ export default function LoginPage() {
             <div>
               <strong>Nexum Collections:</strong> admin@nexum.com / demo123
             </div>
-            <div>
-              <strong>DCI International:</strong> admin@dci.com / demo123
-            </div>
+            {/* <div> */}
+              {/* <strong>DCI International:</strong> admin@dci.com / demo123 */}
+            {/* </div> */}
           </div>
         </div>
 
