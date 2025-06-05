@@ -21,7 +21,7 @@ import {
 import toast from 'react-hot-toast'
 
 function SettingsContent() {
-  const { profile } = useAuth()
+  const { profile, loading: authLoading } = useAuth()
   const [settings, setSettings] = useState({
     company_name: '',
     company_address: '',
@@ -42,20 +42,27 @@ function SettingsContent() {
   })
   
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    if (profile?.agency_id) {
+    // Only try to fetch settings if auth is done loading and we have a profile
+    if (!authLoading && profile?.agency_id) {
       fetchSettings()
+    } else if (!authLoading && !profile?.agency_id) {
+      // If auth is done but no profile/agency, show error
+      setError('No agency access. Please log in with a valid account.')
+      setLoading(false)
     }
-  }, [profile?.agency_id])
+  }, [profile?.agency_id, authLoading])
 
   const fetchSettings = async () => {
     try {
       console.log('[Settings] Fetching settings for agency:', profile?.agency_id)
       
       if (!profile?.agency_id) {
-        console.log('[Settings] No agency_id found, skipping fetch')
+        console.log('[Settings] No agency_id found, showing error')
+        setError('No agency access. Please log in with a valid account.')
         setLoading(false)
         return
       }
@@ -69,9 +76,14 @@ function SettingsContent() {
 
       console.log('[Settings] Query result:', { hasData: !!data, error })
 
-      if (error && error.code !== 'PGRST116') {
-        console.error('[Settings] Error fetching settings:', error)
-        return
+      if (error) {
+        if (error.code === 'PGRST116') {
+          // No settings found - this is OK, we'll create them on save
+          console.log('[Settings] No settings found for agency')
+        } else {
+          console.error('[Settings] Error fetching settings:', error)
+          setError('Failed to load settings. Please try again.')
+        }
       }
 
       if (data) {
@@ -84,6 +96,7 @@ function SettingsContent() {
       }
     } catch (error) {
       console.error('[Settings] Error fetching settings:', error)
+      setError('An unexpected error occurred. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -135,6 +148,40 @@ function SettingsContent() {
     setSettings(prev => ({ ...prev, [field]: value }))
   }
 
+  // Show loading state while auth is loading
+  if (authLoading) {
+    return (
+      <div className="p-8">
+        <div className="max-w-4xl mx-auto">
+          <div className="animate-pulse">
+            <div className="h-8 bg-gray-200 rounded w-1/4 mb-4"></div>
+            <div className="space-y-4">
+              <div className="h-20 bg-gray-200 rounded"></div>
+              <div className="h-20 bg-gray-200 rounded"></div>
+              <div className="h-20 bg-gray-200 rounded"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Show error state if no agency access
+  if (error) {
+    return (
+      <div className="p-8">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-red-800 mb-2">Access Error</h3>
+            <p className="text-red-600">{error}</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Show loading state while fetching settings
   if (loading) {
     return (
       <div className="p-8">

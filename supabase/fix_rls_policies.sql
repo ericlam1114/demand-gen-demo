@@ -83,12 +83,43 @@ CREATE POLICY "Enable full access for authenticated users"
   ON workflow_executions FOR ALL 
   USING (auth.uid() IS NOT NULL);
 
--- Company settings
+-- Drop existing company_settings policies
 DROP POLICY IF EXISTS "Allow all operations on company_settings" ON company_settings;
 DROP POLICY IF EXISTS "Users can access company settings in their agency" ON company_settings;
-CREATE POLICY "Enable full access for authenticated users" 
-  ON company_settings FOR ALL 
-  USING (auth.uid() IS NOT NULL);
+DROP POLICY IF EXISTS "Enable full access for authenticated users" ON company_settings;
+
+-- Create proper RLS policies for company_settings
+CREATE POLICY "Users can view their agency settings" ON company_settings
+  FOR SELECT USING (
+    agency_id IN (
+      SELECT agency_id FROM user_profiles 
+      WHERE id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Users can manage their agency settings" ON company_settings
+  FOR INSERT WITH CHECK (
+    agency_id IN (
+      SELECT agency_id FROM user_profiles 
+      WHERE id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Users can update their agency settings" ON company_settings
+  FOR UPDATE USING (
+    agency_id IN (
+      SELECT agency_id FROM user_profiles 
+      WHERE id = auth.uid()
+    )
+  );
+
+-- Ensure company_settings has proper structure
+ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS agency_id UUID REFERENCES agencies(id);
+ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES user_profiles(id);
+ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+
+-- Create index for better performance
+CREATE INDEX IF NOT EXISTS idx_company_settings_agency_id ON company_settings(agency_id);
 
 -- Ensure sample data exists with proper structure
 INSERT INTO agencies (name, slug, plan, max_users, max_letters_per_month) VALUES 
