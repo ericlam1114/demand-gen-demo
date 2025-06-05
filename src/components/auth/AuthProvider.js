@@ -157,22 +157,39 @@ export function AuthProvider({ children }) {
     }
   }
 
-  const signIn = async (email, password) => {
-    debugLog('signIn called for:', email)
+  // Add this updated signIn method to your AuthProvider
+
+const signIn = async (email, password) => {
+  debugLog('signIn called for:', email)
+  
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    })
     
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      })
-      
-      debugLog('SignIn result:', { hasData: !!data, error })
+    debugLog('SignIn result:', { hasData: !!data, error })
+    
+    if (error) {
       return { data, error }
-    } catch (err) {
-      debugLog('SignIn exception:', err)
-      return { data: null, error: err }
     }
+    
+    // If sign in was successful, wait a bit for the auth state change
+    // to be processed by the onAuthStateChange listener
+    if (data?.user) {
+      debugLog('Sign in successful, user:', data.user.id)
+      
+      // Give the auth state change listener time to process
+      // This helps ensure the profile starts loading
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+    
+    return { data, error }
+  } catch (err) {
+    debugLog('SignIn exception:', err)
+    return { data: null, error: err }
   }
+}
 
   const signUp = async (email, password, metadata = {}) => {
     debugLog('signUp called for:', email)

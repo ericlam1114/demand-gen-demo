@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { Button } from '@/components/ui/button'
 import { Mail, Lock, Building2, AlertCircle } from 'lucide-react'
@@ -12,8 +12,23 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const { signIn } = useAuth()
+  const { signIn, user, profile, loading: authLoading } = useAuth()
   const router = useRouter()
+
+  // Watch for successful authentication and profile load
+  useEffect(() => {
+    console.log('[Login] Auth state changed:', { 
+      hasUser: !!user, 
+      hasProfile: !!profile, 
+      authLoading 
+    })
+    
+    // If we have both user and profile, redirect to dashboard
+    if (user && profile && !authLoading) {
+      console.log('[Login] User and profile loaded, redirecting to dashboard')
+      router.push('/dashboard')
+    }
+  }, [user, profile, authLoading, router])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -32,18 +47,18 @@ export default function LoginPage() {
         setError(error.message)
         setLoading(false)
       } else {
-        console.log('[Login] Sign in successful, redirecting...')
-        // Keep loading true briefly while redirecting
-        setTimeout(() => {
-          console.log('[Login] Executing redirect to dashboard')
-          router.push('/dashboard')
-        }, 100)
+        console.log('[Login] Sign in successful, waiting for profile to load...')
+        // Don't manually redirect here - let the useEffect handle it
+        // when both user and profile are ready
         
-        // Set loading to false after a brief delay in case redirect fails
+        // Set a timeout to handle cases where profile loading fails
         setTimeout(() => {
-          console.log('[Login] Setting loading false as fallback')
-          setLoading(false)
-        }, 3000)
+          if (!profile) {
+            console.log('[Login] Profile failed to load after 10s')
+            setError('Failed to load user profile. Please try again.')
+            setLoading(false)
+          }
+        }, 10000) // 10 second timeout
       }
     } catch (err) {
       console.error('[Login] Login error:', err)
@@ -51,6 +66,9 @@ export default function LoginPage() {
       setLoading(false)
     }
   }
+
+  // Show different loading states
+  const isAuthenticating = loading || (user && !profile && authLoading)
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
@@ -86,7 +104,8 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                disabled={isAuthenticating}
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
                 placeholder="admin@yourcompany.com"
               />
             </div>
@@ -104,7 +123,8 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                disabled={isAuthenticating}
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
                 placeholder="••••••••"
               />
             </div>
@@ -112,13 +132,13 @@ export default function LoginPage() {
 
           <Button
             type="submit"
-            disabled={loading}
+            disabled={isAuthenticating}
             className="w-full py-3"
           >
-            {loading ? (
+            {isAuthenticating ? (
               <>
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                Signing in...
+                {user && !profile ? 'Loading profile...' : 'Signing in...'}
               </>
             ) : (
               'Sign In'
@@ -154,7 +174,16 @@ export default function LoginPage() {
             <div><strong>DCI International:</strong> admin@dci.com / demo123</div>
           </div>
         </div>
+
+        {/* Debug Info (remove in production) */}
+        {/* {process.env.NODE_ENV === 'development' && (
+          <div className="mt-4 p-2 bg-gray-100 rounded text-xs text-gray-600">
+            <div>Auth State: {authLoading ? 'Loading' : 'Ready'}</div>
+            <div>User: {user ? user.email : 'None'}</div>
+            <div>Profile: {profile ? 'Loaded' : 'Not loaded'}</div>
+          </div>
+        )} */}
       </div>
     </div>
   )
-} 
+}
