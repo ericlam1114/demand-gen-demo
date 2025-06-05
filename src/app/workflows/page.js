@@ -86,8 +86,7 @@ const WORKFLOW_STEPS = [
 ]
 
 function WorkflowsContent() {
-  const { profile } = useAuth()
-  const agency = profile?.agencies
+  const { profile, agency } = useAuth()
   const currentPlan = agency?.plan || 'free'
   
   const [workflows, setWorkflows] = useState([])
@@ -97,6 +96,7 @@ function WorkflowsContent() {
   const [isEditing, setIsEditing] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [showStepConfig, setShowStepConfig] = useState(null)
+  const [loading, setLoading] = useState(true)
 
   // Form state
   const [workflowForm, setWorkflowForm] = useState({
@@ -121,8 +121,12 @@ function WorkflowsContent() {
   const canCreateMoreActive = canCreateActiveWorkflow(currentPlan, currentActiveCount)
 
   useEffect(() => {
-    fetchWorkflows()
-    fetchTemplates()
+    const loadData = async () => {
+      await fetchWorkflows()
+      await fetchTemplates()
+      setLoading(false)
+    }
+    loadData()
   }, [])
 
   const fetchWorkflows = async () => {
@@ -432,6 +436,27 @@ function WorkflowsContent() {
       console.error('Error updating default workflow:', error)
       toast.error('Failed to update default workflow')
     }
+  }
+
+  if (loading) {
+    return (
+      <div className="p-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="animate-pulse">
+            <div className="h-8 bg-gray-200 rounded w-1/4 mb-4"></div>
+            <div className="h-4 bg-gray-200 rounded w-1/2 mb-8"></div>
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+              <div className="lg:col-span-1">
+                <div className="bg-white rounded-lg shadow h-96"></div>
+              </div>
+              <div className="lg:col-span-3">
+                <div className="bg-white rounded-lg shadow h-96"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (

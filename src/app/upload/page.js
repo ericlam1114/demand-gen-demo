@@ -30,7 +30,7 @@ import {
 import toast from 'react-hot-toast'
 
 function DataSourcesContent() {
-  const { profile } = useAuth()
+  const { profile, agency } = useAuth()
   const [activeTab, setActiveTab] = useState('csv-mapping')
   const [columnMappings, setColumnMappings] = useState([])
   const [integrations, setIntegrations] = useState([])
@@ -86,7 +86,7 @@ function DataSourcesContent() {
   ]
 
   const fetchData = useCallback(async () => {
-    if (!profile?.agency_id) return
+    if (!agency?.id) return
     
     setLoading(true)
     try {
@@ -94,13 +94,13 @@ function DataSourcesContent() {
       const mappingsResult = await supabase
         .from('csv_column_mappings')
         .select('*')
-        .eq('agency_id', profile.agency_id)
+        .eq('agency_id', agency.id)
 
       // Fetch API integrations  
       const integrationsResult = await supabase
         .from('api_integrations')
         .select('*')
-        .eq('agency_id', profile.agency_id)
+        .eq('agency_id', agency.id)
 
       // Handle case where tables don't exist yet
       setColumnMappings(mappingsResult?.data || [])
@@ -114,7 +114,7 @@ function DataSourcesContent() {
           const response = await fetch('/api/init-data-sources', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ agency_id: profile.agency_id })
+            body: JSON.stringify({ agency_id: agency.id })
           })
           
           if (response.ok) {
@@ -131,7 +131,7 @@ function DataSourcesContent() {
     } finally {
       setLoading(false)
     }
-  }, [profile, supabase])
+  }, [agency, supabase])
 
   useEffect(() => {
     fetchData()
@@ -149,7 +149,7 @@ function DataSourcesContent() {
         .from('csv_column_mappings')
         .insert({
           ...newMapping,
-          agency_id: profile?.agency_id,
+          agency_id: agency?.id,
           created_by: profile?.id
         })
 
@@ -200,7 +200,7 @@ function DataSourcesContent() {
         .from('api_integrations')
         .insert({
           ...newIntegration,
-          agency_id: profile?.agency_id,
+          agency_id: agency?.id,
           created_by: profile?.id
         })
 

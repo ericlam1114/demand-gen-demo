@@ -25,8 +25,7 @@ import {
 import toast from 'react-hot-toast'
 
 function TemplatesContent() {
-  const { canDeleteContent, profile } = useAuth()
-  const agency = profile?.agencies
+  const { canDeleteContent, profile, agency, loading: authLoading } = useAuth()
   const currentPlan = agency?.plan || 'free'
   
   const [templates, setTemplates] = useState([])
@@ -62,17 +61,20 @@ function TemplatesContent() {
   }
 
   useEffect(() => {
-    if (profile?.agency_id) {
+    if (agency?.id) {
       fetchTemplates()
+    } else if (!authLoading) {
+      // Auth is done loading but no agency
+      setLoading(false)
     }
-  }, [profile?.agency_id])
+  }, [agency?.id, authLoading])
 
   const fetchTemplates = async () => {
     setLoading(true)
     try {
-      console.log('[Templates] Fetching templates for agency:', profile?.agency_id)
+      console.log('[Templates] Fetching templates for agency:', agency?.id)
       
-      if (!profile?.agency_id) {
+      if (!agency?.id) {
         console.log('[Templates] No agency_id found, skipping fetch')
         setLoading(false)
         return
@@ -81,7 +83,7 @@ function TemplatesContent() {
       const { data, error } = await supabase
         .from('templates')
         .select('*')
-        .eq('agency_id', profile.agency_id)
+        .eq('agency_id', agency.id)
         .order('created_at', { ascending: false })
 
       console.log('[Templates] Query result:', { data: data?.length || 0, error })
@@ -139,7 +141,7 @@ function TemplatesContent() {
       const templateData = {
         ...editorData,
         created_by: profile?.id,
-        agency_id: profile?.agency_id
+        agency_id: agency?.id
       }
 
       let result
