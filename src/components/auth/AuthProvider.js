@@ -41,13 +41,13 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     debugLog('AuthProvider useEffect starting')
     
-    // Set a maximum loading time to prevent infinite hanging
+    // Set a shorter loading timeout
     const loadingTimeout = setTimeout(() => {
       debugLog('Auth loading timeout reached, forcing end of loading state')
       setLoading(false)
       // If still loading after timeout, redirect to login
       router.push('/login')
-    }, 8000) // 8 second timeout
+    }, 4000) // Reduced from 8s to 4s
 
     // Get initial session with better error handling
     debugLog('Getting initial session...')
@@ -58,6 +58,9 @@ export function AuthProvider({ children }) {
         debugLog('Session error, redirecting to login:', error)
         clearTimeout(loadingTimeout)
         setLoading(false)
+        setUser(null)
+        setProfile(null)
+        setAgency(null)
         router.push('/login')
         return
       }
@@ -65,18 +68,32 @@ export function AuthProvider({ children }) {
       if (session?.user) {
         debugLog('Setting user from session:', session.user.id)
         setUser(session.user)
-        loadUserProfile(session.user.id).finally(() => {
+        loadUserProfile(session.user.id).catch(err => {
+          debugLog('Error loading profile:', err)
+          clearTimeout(loadingTimeout)
+          setLoading(false)
+          setUser(null)
+          setProfile(null)
+          setAgency(null)
+          router.push('/login')
+        }).finally(() => {
           clearTimeout(loadingTimeout)
         })
       } else {
         debugLog('No session, setting loading false')
         clearTimeout(loadingTimeout)
         setLoading(false)
+        setUser(null)
+        setProfile(null)
+        setAgency(null)
       }
     }).catch((error) => {
       debugLog('Error getting session:', error)
       clearTimeout(loadingTimeout)
       setLoading(false)
+      setUser(null)
+      setProfile(null)
+      setAgency(null)
       router.push('/login')
     })
 
@@ -90,10 +107,18 @@ export function AuthProvider({ children }) {
         if (event === 'SIGNED_IN' && session?.user) {
           debugLog('Sign in detected, loading profile for:', session.user.id)
           setUser(session.user)
-          await loadUserProfile(session.user.id)
-        } else if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED' && !session) {
+          try {
+            await loadUserProfile(session.user.id)
+          } catch (err) {
+            debugLog('Error loading profile after sign in:', err)
+            setUser(null)
+            setProfile(null)
+            setAgency(null)
+            setLoading(false)
+            router.push('/login')
+          }
+        } else if (event === 'SIGNED_OUT' || (event === 'TOKEN_REFRESHED' && !session)) {
           debugLog('Sign out or token refresh failed, clearing state')
-          // Immediately clear all state - no demo data should ever appear
           setUser(null)
           setProfile(null)
           setAgency(null)
@@ -101,15 +126,21 @@ export function AuthProvider({ children }) {
           router.push('/login')
         } else if (event === 'TOKEN_REFRESHED' && session) {
           debugLog('Token refreshed successfully')
-          // Token was refreshed, ensure user is still valid
           if (session.user && !user) {
             setUser(session.user)
-            await loadUserProfile(session.user.id)
+            try {
+              await loadUserProfile(session.user.id)
+            } catch (err) {
+              debugLog('Error loading profile after token refresh:', err)
+              setUser(null)
+              setProfile(null)
+              setAgency(null)
+              setLoading(false)
+              router.push('/login')
+            }
           }
-        } else {
-          debugLog('Other auth event, setting loading false')
-          setLoading(false)
         }
+        setLoading(false)
       }
     )
 
@@ -124,9 +155,9 @@ export function AuthProvider({ children }) {
     debugLog('loadUserProfile called for:', userId)
     
     try {
-      // Create a timeout promise that rejects after 4 seconds
+      // Create a shorter timeout promise
       const profileTimeout = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Profile loading timeout')), 4000)
+        setTimeout(() => reject(new Error('Profile loading timeout')), 2000) // Reduced from 4s to 2s
       )
 
       // Try to get user profile with a timeout
@@ -161,21 +192,18 @@ export function AuthProvider({ children }) {
         setAgency(null)
         setLoading(false)
         router.push('/login')
-        return
+        throw timeoutError
       }
 
       if (result.error || !result.data) {
         debugLog('Profile error or not found - user not authorized:', result.error)
-        
-        // Security: Users without proper profiles should not get access
-        // Sign them out and redirect to login
         await supabase.auth.signOut()
         setUser(null)
         setProfile(null)
         setAgency(null)
         setLoading(false)
         router.push('/login')
-        return
+        throw new Error('Profile not found or unauthorized')
       }
 
       debugLog('Successfully loaded profile, setting state')
@@ -185,14 +213,13 @@ export function AuthProvider({ children }) {
 
     } catch (error) {
       debugLog('Unexpected error in loadUserProfile:', error)
-      
-      // Security: On any error, sign out the user instead of giving demo access
       await supabase.auth.signOut()
       setUser(null)
       setProfile(null)
       setAgency(null)
       setLoading(false)
       router.push('/login')
+      throw error
     }
   }
 
