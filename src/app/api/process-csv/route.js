@@ -12,7 +12,8 @@ export async function POST(request) {
       recordCount: data?.length || 0,
       workflowId,
       agencyId,
-      batchSize: BATCH_SIZE
+      batchSize: BATCH_SIZE,
+      sampleRecord: data?.[0] // Add sample record for debugging
     })
     
     if (!data || !Array.isArray(data)) {
@@ -168,8 +169,16 @@ async function processBatch(supabase, batch, agencyId, targetWorkflowId, workflo
   // Validate and prepare all records first
   for (const [index, record] of batch.entries()) {
     try {
-      if (!record.name || !record.email || !record.balance_cents || !record.state) {
+      // Validate required fields (using original field names from CSV)
+      if (!record.name || !record.email || !record.balance || !record.state) {
         results.errors.push(`Record ${index + 1}: Missing required fields (name, email, balance, state)`)
+        continue
+      }
+      
+      // Convert balance to cents (like original code)
+      const balanceCents = Math.round(parseFloat(record.balance) * 100)
+      if (isNaN(balanceCents)) {
+        results.errors.push(`Record ${index + 1} (${record.name}): Invalid balance amount`)
         continue
       }
       
@@ -184,7 +193,7 @@ async function processBatch(supabase, batch, agencyId, targetWorkflowId, workflo
         name: record.name,
         email: record.email,
         state: record.state?.toUpperCase(),
-        balance_cents: record.balance_cents,
+        balance_cents: balanceCents,
         phone: record.phone || null,
         address: record.address || null,
         city: record.city || null,
@@ -233,7 +242,7 @@ async function processBatch(supabase, batch, agencyId, targetWorkflowId, workflo
       })
       
     } catch (error) {
-      results.errors.push(`Record ${index + 1} (${record.name}): ${error.message}`)
+      results.errors.push(`Record ${index + 1} (${record.name || 'Unknown'}): ${error.message}`)
     }
   }
   
