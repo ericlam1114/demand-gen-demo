@@ -102,6 +102,42 @@ export async function POST(request) {
 
         if (stepError || !step) {
           console.error(`No step found for workflow ${workflow.id}:`, stepError)
+          console.error(`Workflow details: workflow_id=${workflow.workflow_id}, current_step_number=${workflow.current_step_number}`)
+          
+          // Check if this workflow has any steps at all
+          const { data: allSteps, error: allStepsError } = await supabase
+            .from('workflow_steps')
+            .select('id, step_number')
+            .eq('workflow_id', workflow.workflow_id)
+            .order('step_number', { ascending: true })
+
+          if (allStepsError || !allSteps || allSteps.length === 0) {
+            console.error(`Workflow ${workflow.workflow_id} has no steps configured. Marking as completed.`)
+            
+            // Mark workflow as completed since it has no steps
+            await supabase
+              .from('debtor_workflows')
+              .update({
+                status: 'completed',
+                completed_at: now.toISOString(),
+                metadata: { error: 'No workflow steps configured' }
+              })
+              .eq('id', workflow.id)
+            
+            errors.push(`Workflow ${workflow.id}: No steps configured`)
+            continue
+          }
+          
+          // If there are steps but current step not found, reset to first step
+          console.log(`Resetting workflow ${workflow.id} to first step`)
+          await supabase
+            .from('debtor_workflows')
+            .update({
+              current_step_number: 1,
+              next_action_at: now.toISOString()
+            })
+            .eq('id', workflow.id)
+          
           continue
         }
 
@@ -306,35 +342,48 @@ async function executeSmsStep(supabase, workflow, step, companySettings, now) {
 
 // Execute physical mail step
 async function executePhysicalStep(supabase, workflow, step, companySettings, now) {
-  // Call the physical mail API
-  const response = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/send-physical-mail`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      debtor_id: workflow.debtor_id,
-      template_id: step.templates.id,
-      company_settings: companySettings
-    })
-  })
+  try {
+    // Validate debtor has address information
+    if (!workflow.debtors.address || !workflow.debtors.city || !workflow.debtors.state || !workflow.debtors.zip) {
+      throw new Error('Debtor address information is incomplete for physical mail')
+    }
 
-  if (!response.ok) {
-    throw new Error('Failed to send physical mail')
+    // Call the physical mail API
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+    const response = await fetch(`${siteUrl}/api/send-physical-mail`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        debtor_id: workflow.debtor_id,
+        template_id: step.templates.id,
+        company_settings: companySettings
+      })
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error(`Physical mail API error: ${response.status} ${response.statusText}`, errorText)
+      throw new Error(`Failed to send physical mail: ${response.statusText}`)
+    }
+
+    const result = await response.json()
+    console.log(`Physical mail sent via Lob: ${result.lob_letter_id}`)
+
+    // Record the execution
+    await supabase
+      .from('workflow_executions')
+      .insert({
+        debtor_workflow_id: workflow.id,
+        step_id: step.id,
+        execution_type: 'physical',
+        executed_at: now.toISOString(),
+        status: 'completed',
+        letter_id: result.letter_id
+      })
+  } catch (error) {
+    console.error(`Error in physical mail step: ${error.message}`)
+    throw error
   }
-
-  const result = await response.json()
-  console.log(`Physical mail sent via Lob: ${result.lob_letter_id}`)
-
-  // Record the execution
-  await supabase
-    .from('workflow_executions')
-    .insert({
-      debtor_workflow_id: workflow.id,
-      step_id: step.id,
-      execution_type: 'physical',
-      executed_at: now.toISOString(),
-      status: 'completed',
-      letter_id: result.letter_id
-    })
 }
 
 // Schedule next step in workflow

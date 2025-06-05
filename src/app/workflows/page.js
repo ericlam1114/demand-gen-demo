@@ -258,6 +258,17 @@ function WorkflowsContent() {
       return
     }
 
+    // Ensure all steps have valid templates
+    const invalidSteps = workflowSteps.filter((step, index) => {
+      if (step.step_type === 'wait') return false // Wait steps don't need templates
+      return !step.template_id
+    })
+
+    if (invalidSteps.length > 0) {
+      toast.error('Please select a template for all email, SMS, and physical mail steps')
+      return
+    }
+
     // Check workflow limits for new workflows
     if (!selectedWorkflow && !canCreateMore) {
       toast.error(getWorkflowUpgradeMessage(currentPlan, workflows.length))
