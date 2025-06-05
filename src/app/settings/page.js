@@ -104,25 +104,31 @@ function SettingsContent() {
   const saveSettings = async () => {
     setSaving(true)
     try {
+      // Check if settings already exist - remove .single() to avoid 406 error
       const { data: existingSettings } = await supabase
         .from('company_settings')
         .select('id')
         .eq('agency_id', profile.agency_id)
         .limit(1)
-        .single()
+
+      // Handle array result properly
+      const hasExisting = existingSettings && existingSettings.length > 0
+      const existingId = hasExisting ? existingSettings[0].id : null
 
       let result
-      if (existingSettings) {
+      if (hasExisting && existingId) {
         // Update existing
+        console.log('[Settings] Updating existing settings:', existingId)
         result = await supabase
           .from('company_settings')
           .update({
             ...settings,
             updated_at: new Date().toISOString()
           })
-          .eq('id', existingSettings.id)
+          .eq('id', existingId)
       } else {
         // Insert new
+        console.log('[Settings] Creating new settings for agency:', profile.agency_id)
         result = await supabase
           .from('company_settings')
           .insert({
