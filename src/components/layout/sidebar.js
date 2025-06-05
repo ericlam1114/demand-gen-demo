@@ -10,7 +10,8 @@ const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: BarChart3 },
   { name: "Templates", href: "/templates", icon: FileText },
   { name: "Workflows", href: "/workflows", icon: Workflow },
-  { name: "Integrations", href: "/upload", icon: Database },
+  { name: "Data Sources", href: "/upload", icon: Database },
+  { name: "Integration Guide", href: "/integration-guide", icon: Zap },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
