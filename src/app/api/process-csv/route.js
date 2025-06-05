@@ -31,17 +31,18 @@ export async function POST(request) {
     let targetWorkflowId = workflowId
     if (!targetWorkflowId) {
       console.log('[CSV Processing] No workflow specified, looking for default workflow...')
-      const { data: defaultWorkflow, error: workflowError } = await supabase
+      const { data: defaultWorkflows, error: workflowError } = await supabase
         .from('workflows')
         .select('id, name')
         .eq('agency_id', agencyId)
         .eq('is_default', true)
         .eq('is_active', true)
-        .single()
+        .limit(1)
       
       if (workflowError) {
         console.error('[CSV Processing] Error finding default workflow:', workflowError)
-      } else if (defaultWorkflow) {
+      } else if (defaultWorkflows && defaultWorkflows.length > 0) {
+        const defaultWorkflow = defaultWorkflows[0]
         targetWorkflowId = defaultWorkflow.id
         console.log('[CSV Processing] Using default workflow:', defaultWorkflow.name, defaultWorkflow.id)
       }
