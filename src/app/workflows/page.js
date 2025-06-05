@@ -144,7 +144,7 @@ function WorkflowsContent() {
     try {
       const { data, error } = await supabase
         .from('templates')
-        .select('id, name, subject')
+        .select('id, name, email_subject, channel')
         .order('name')
 
       if (error) {
