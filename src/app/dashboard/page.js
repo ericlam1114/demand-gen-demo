@@ -829,20 +829,39 @@ function DashboardContent() {
     }
 
     try {
+      console.log('[Delete] Starting delete process for debtor:', debtorId, debtorName)
+      
       // First stop any active workflows
       await stopWorkflowForDebtor(debtorId, 'deleted')
 
       // Delete the debtor (cascades to letters, workflow enrollments, etc.)
-      const { error } = await supabase
+      console.log('[Delete] Attempting to delete debtor from database...')
+      const { data, error } = await supabase
         .from('debtors')
         .delete()
         .eq('id', debtorId)
+        .select() // Add select to see what was deleted
 
       if (error) {
-        console.error('Error deleting debtor:', error)
-        toast.error('Failed to delete debtor: ' + error.message)
+        console.error('[Delete] Error deleting debtor:', {
+          error,
+          errorCode: error?.code,
+          errorMessage: error?.message,
+          errorDetails: error?.details,
+          fullError: JSON.stringify(error, null, 2)
+        })
+        
+        const errorMessage = error.message || error.details || 'Unable to delete debtor'
+        toast.error('Failed to delete debtor: ' + errorMessage)
+        
+        // Check if it's an RLS error
+        if (error.code === '42501' || errorMessage.includes('row-level security')) {
+          toast.error('Permission denied. Please check your access rights. Run the RLS fix script in Supabase.')
+        }
         return
       }
+      
+      console.log('[Delete] Successfully deleted:', data)
 
       toast.success(`${debtorName} has been deleted`)
       await fetchLetters()

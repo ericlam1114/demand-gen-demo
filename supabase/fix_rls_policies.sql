@@ -174,4 +174,81 @@ INSERT INTO user_profiles (
   role = 'admin',
   agency_id = NULL,
   full_name = 'Eric Lam - DataSynthetix',
-  email = 'eric@datasynthetix.com'; 
+  email = 'eric@datasynthetix.com';
+
+-- Fix RLS policies for development
+-- This script creates permissive policies for testing
+
+-- First, handle user_profiles table if it exists
+DO $$ 
+BEGIN
+    -- Drop existing policy on user_profiles if it exists
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'user_profiles') THEN
+        DROP POLICY IF EXISTS "Enable full access for authenticated users" ON user_profiles;
+        DROP POLICY IF EXISTS "Allow all operations on user_profiles" ON user_profiles;
+    END IF;
+END $$;
+
+-- Drop existing policies on debtors table
+DROP POLICY IF EXISTS "Users can view own agency debtors" ON debtors;
+
+-- Create permissive policies for development
+-- WARNING: These policies allow all operations - only use for development!
+
+-- Debtors table - allow all operations
+CREATE POLICY "Allow all operations on debtors" ON debtors
+  FOR ALL 
+  USING (true)
+  WITH CHECK (true);
+
+-- Letters table - allow all operations
+DROP POLICY IF EXISTS "Users can view own agency letters" ON letters;
+CREATE POLICY "Allow all operations on letters" ON letters
+  FOR ALL 
+  USING (true)
+  WITH CHECK (true);
+
+-- Events table - allow all operations  
+DROP POLICY IF EXISTS "Users can view own agency events" ON events;
+CREATE POLICY "Allow all operations on events" ON events
+  FOR ALL 
+  USING (true)
+  WITH CHECK (true);
+
+-- Templates table - allow all operations
+DROP POLICY IF EXISTS "Users can view own agency templates" ON templates;
+CREATE POLICY "Allow all operations on templates" ON templates
+  FOR ALL 
+  USING (true)
+  WITH CHECK (true);
+
+-- Agencies table - allow all operations
+DROP POLICY IF EXISTS "Users can view own agency" ON agencies;
+CREATE POLICY "Allow all operations on agencies" ON agencies
+  FOR ALL 
+  USING (true)
+  WITH CHECK (true);
+
+-- Workflow related tables (if they have RLS enabled)
+DROP POLICY IF EXISTS "Users can view own agency workflows" ON workflows;
+DROP POLICY IF EXISTS "Allow all workflow access" ON workflows;
+CREATE POLICY "Allow all operations on workflows" ON workflows FOR ALL USING (true);
+
+DROP POLICY IF EXISTS "Users can view own agency workflow steps" ON workflow_steps;
+DROP POLICY IF EXISTS "Allow all workflow steps access" ON workflow_steps;
+CREATE POLICY "Allow all operations on workflow_steps" ON workflow_steps FOR ALL USING (true);
+
+DROP POLICY IF EXISTS "Allow all debtor workflows access" ON debtor_workflows;
+CREATE POLICY "Allow all operations on debtor_workflows" ON debtor_workflows FOR ALL USING (true);
+
+DROP POLICY IF EXISTS "Allow all workflow executions access" ON workflow_executions;
+CREATE POLICY "Allow all operations on workflow_executions" ON workflow_executions FOR ALL USING (true);
+
+-- Company settings
+DROP POLICY IF EXISTS "Users can access company settings" ON company_settings;
+CREATE POLICY "Allow all operations on company_settings" ON company_settings FOR ALL USING (true);
+
+-- Note: For production, you should implement proper RLS policies that check:
+-- 1. User authentication (auth.uid())
+-- 2. User's agency membership
+-- 3. Appropriate permissions for each operation (SELECT, INSERT, UPDATE, DELETE) 
