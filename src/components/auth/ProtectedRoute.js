@@ -9,30 +9,33 @@ export function ProtectedRoute({ children, requireAdmin = false }) {
   const router = useRouter()
 
   useEffect(() => {
+    // Don't do anything while loading
+    if (loading) {
+      return
+    }
+
     // Skip protection on login page
     if (typeof window !== 'undefined' && window.location.pathname.includes('/login')) {
       return
     }
 
-    // Wait for loading to complete
-    if (loading) {
-      return
-    }
-
-    // No user = redirect to login
-    if (!user) {
+    // After loading is complete, check authentication
+    if (!loading && !user) {
+      console.log('[ProtectedRoute] No user after loading, redirecting to login')
       router.push('/login')
       return
     }
 
-    // User but no profile = redirect to login (profile failed to load)
-    if (user && !profile) {
+    // User exists but profile failed to load
+    if (!loading && user && !profile) {
+      console.log('[ProtectedRoute] User exists but no profile, redirecting to login')
       router.push('/login')
       return
     }
 
     // Check admin requirement
-    if (requireAdmin && profile?.role !== 'admin') {
+    if (!loading && requireAdmin && profile?.role !== 'admin') {
+      console.log('[ProtectedRoute] Admin required but user is not admin, redirecting to dashboard')
       router.push('/dashboard')
       return
     }
@@ -44,26 +47,32 @@ export function ProtectedRoute({ children, requireAdmin = false }) {
     return children
   }
 
-  // Show loading while AuthProvider is loading
+  // ALWAYS show loading while AuthProvider is loading
+  // This prevents any redirects during the initial auth check
   if (loading) {
-    return <div className="flex items-center justify-center min-h-screen">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-        <p className="text-gray-600">Loading...</p>
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
       </div>
-    </div>
+    )
   }
 
-  // Show content only if fully authenticated
-  if (user && profile) {
+  // After loading is complete, check if authenticated
+  if (!loading && user && profile) {
     return children
   }
 
-  // Fallback loading (should redirect soon)
-  return <div className="flex items-center justify-center min-h-screen">
-    <div className="text-center">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-      <p className="text-gray-600">Redirecting...</p>
+  // If we get here, we're not loading but also not authenticated
+  // The useEffect will handle the redirect
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+        <p className="text-gray-600">Redirecting...</p>
+      </div>
     </div>
-  </div>
-} 
+  )
+}
