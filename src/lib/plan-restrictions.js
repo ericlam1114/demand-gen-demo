@@ -5,21 +5,21 @@ const PLAN_FEATURES = {
     features: ['basic_templates', 'email_sending', 'basic_analytics'],
     templates: { limit: 3 },
     letters: { limit: 100 },
-    workflows: { limit: 1, concurrent: 1 }, // 1 workflow, 1 concurrent execution
+    workflows: { limit: 1, concurrent: 1, defaults: 1, active: 0 }, // 1 workflow total, 1 default, 0 additional active
     stepTypes: ['email', 'physical']
   },
   professional: {
     features: ['basic_templates', 'email_sending', 'sms_sending', 'basic_analytics', 'workflows', 'wait_steps'],
     templates: { limit: 10 },
     letters: { limit: 1000 },
-    workflows: { limit: 5, concurrent: 1 }, // 5 workflows, but only 1 can run at a time
+    workflows: { limit: 5, concurrent: 1, defaults: 1, active: 4 }, // 5 workflows total, 1 default, 4 active (but only 1 runs at a time)
     stepTypes: ['email', 'sms', 'physical', 'wait']
   },
   enterprise: {
-    features: ['basic_templates', 'advanced_templates', 'email_sending', 'sms_sending', 'physical_mail', 'advanced_analytics', 'workflows', 'wait_steps', 'api_access'],
+    features: ['basic_templates', 'advanced_templates', 'email_sending', 'sms_sending', 'physical_mail', 'advanced_analytics', 'workflows', 'wait_steps', 'api_access', 'workflow_tagging'],
     templates: { limit: -1 }, // unlimited
     letters: { limit: -1 }, // unlimited
-    workflows: { limit: -1, concurrent: -1 }, // unlimited workflows and concurrent executions
+    workflows: { limit: -1, concurrent: -1, defaults: 1, active: -1 }, // unlimited workflows, 1 default, unlimited active, unlimited concurrent
     stepTypes: ['email', 'sms', 'physical', 'wait']
   }
 }
@@ -161,7 +161,7 @@ export function getRestrictionProps(planName, featureName) {
 }
 
 export function getWorkflowLimits(plan) {
-  return PLAN_FEATURES[plan]?.workflows || { limit: 0, concurrent: 0 }
+  return PLAN_FEATURES[plan]?.workflows || { limit: 0, concurrent: 0, defaults: 0, active: 0 }
 }
 
 export function canCreateWorkflow(plan, currentWorkflowCount) {
@@ -184,4 +184,44 @@ export function getWorkflowUpgradeMessage(plan, currentCount) {
   }
   
   return 'Upgrade to access more workflow features.'
+}
+
+export function getDefaultWorkflowLimits(plan) {
+  return PLAN_FEATURES[plan]?.workflows?.defaults || 1
+}
+
+export function getActiveWorkflowLimits(plan) {
+  return PLAN_FEATURES[plan]?.workflows?.active || 0
+}
+
+export function canSetAsDefault(plan, currentDefaultCount) {
+  const limit = getDefaultWorkflowLimits(plan)
+  return limit === -1 || currentDefaultCount < limit
+}
+
+export function canCreateActiveWorkflow(plan, currentActiveCount) {
+  const limit = getActiveWorkflowLimits(plan)
+  return limit === -1 || currentActiveCount < limit
+}
+
+export function getWorkflowMessage(plan) {
+  const limits = getWorkflowLimits(plan)
+  
+  if (plan === 'free') {
+    return `Free plan allows 1 workflow total.`
+  } else if (plan === 'professional') {
+    return `Professional plan: 1 default workflow + ${limits.active} active workflows (1 runs at a time).`
+  } else if (plan === 'enterprise') {
+    return `Enterprise plan: 1 default workflow + unlimited active workflows (unlimited concurrent execution).`
+  }
+  
+  return 'Workflow limits apply based on your plan.'
+}
+
+export function getDefaultWorkflowMessage(plan) {
+  if (plan === 'enterprise') {
+    return 'Enterprise allows 1 default workflow for quick actions, plus unlimited active workflows for API/CSV assignments.'
+  }
+  
+  return `Only 1 workflow can be set as default on the ${plan} plan.`
 } 

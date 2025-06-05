@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Search, MoreHorizontal, Eye, CheckCircle, RotateCcw, Upload, X, FileText, Calendar, Mail, DollarSign, User, MapPin, FolderOpen, FolderCheck, Clock, TrendingUp } from 'lucide-react'
+import { Search, MoreHorizontal, Eye, CheckCircle, RotateCcw, Upload, X, FileText, Calendar, Mail, DollarSign, User, MapPin, FolderOpen, FolderCheck, Clock, TrendingUp, ChevronDown, Star, Play, Square, Crown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate, getStatusColor, getStatusIcon } from '@/lib/utils'
@@ -10,8 +10,15 @@ import Papa from 'papaparse'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { startWorkflowForDebtor, stopWorkflowForDebtor } from '@/lib/workflow-engine'
+import { useAuth } from '@/components/auth/AuthProvider'
+import { getDefaultWorkflowLimits } from '@/lib/plan-restrictions'
 
 function DashboardContent() {
+  const { profile } = useAuth()
+  const agency = profile?.agencies
+  const currentPlan = agency?.plan || 'free'
+  const defaultWorkflowLimits = getDefaultWorkflowLimits(currentPlan)
+  
   const [letters, setLetters] = useState([])
   const [filteredLetters, setFilteredLetters] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
@@ -31,6 +38,7 @@ function DashboardContent() {
   const [validData, setValidData] = useState([])
   const [errors, setErrors] = useState([])
   const [isUploading, setIsUploading] = useState(false)
+  const [selectedUploadWorkflow, setSelectedUploadWorkflow] = useState(null)
   
   const [metrics, setMetrics] = useState({
     total: 0,
@@ -44,6 +52,7 @@ function DashboardContent() {
 
   const [workflows, setWorkflows] = useState([])
   const [selectedWorkflow, setSelectedWorkflow] = useState(null)
+  const [showWorkflowDropdown, setShowWorkflowDropdown] = useState(null)
 
   // Fetch letters and related data
   const fetchLetters = useCallback(async () => {
@@ -99,9 +108,35 @@ function DashboardContent() {
     }
   }, [])
 
+  // Fetch workflows for workflow selection
+  const fetchWorkflows = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('workflows')
+        .select('id, name, is_default')
+        .eq('is_active', true)
+        .order('is_default', { ascending: false })
+
+      if (!error) {
+        setWorkflows(data || [])
+        // For Enterprise with multiple defaults, don't auto-select
+        // For other plans, auto-select the single default
+        if (currentPlan !== 'enterprise') {
+          const defaultWorkflow = data?.find(w => w.is_default)
+          if (defaultWorkflow) {
+            setSelectedWorkflow(defaultWorkflow.id)
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching workflows:', error)
+    }
+  }, [currentPlan])
+
   useEffect(() => {
     fetchLetters()
-  }, [fetchLetters])
+    fetchWorkflows()
+  }, [fetchLetters, fetchWorkflows])
 
   useEffect(() => {
     // Filter letters based on search term and status
@@ -208,6 +243,7 @@ function DashboardContent() {
     data.forEach((row, index) => {
       const errors = []
       
+      // Required field validations
       if (!row.name || row.name.trim().length < 2) {
         errors.push('Name must be at least 2 characters')
       }
@@ -225,8 +261,27 @@ function DashboardContent() {
         errors.push('State must be 2 letters (e.g., CA, NY)')
       }
       
+      // Optional field validations
+      if (row.phone && !/^\+?[\d\s\-\(\)]+$/.test(row.phone)) {
+        errors.push('Phone number contains invalid characters')
+      }
+      
+      if (row.zip && !/^\d{5}(-\d{4})?$/.test(row.zip)) {
+        errors.push('ZIP code must be 5 digits or 5+4 format (e.g., 90210 or 90210-1234)')
+      }
+      
       if (errors.length === 0) {
-        validRecords.push({ ...row, balance_cents: Math.round(balance * 100) })
+        validRecords.push({ 
+          ...row, 
+          balance_cents: Math.round(balance * 100),
+          state: row.state?.toUpperCase(),
+          zip: row.zip || null,
+          phone: row.phone || null,
+          address: row.address || null,
+          city: row.city || null,
+          account_number: row.account_number || null,
+          original_creditor: row.original_creditor || null
+        })
       } else {
         errorRecords.push({ row: index + 1, errors })
       }
@@ -245,7 +300,10 @@ function DashboardContent() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ data: validData }),
+        body: JSON.stringify({ 
+          data: validData, 
+          workflowId: selectedUploadWorkflow // Send selected workflow for Enterprise
+        }),
       })
       
       if (response.ok) {
@@ -273,6 +331,7 @@ function DashboardContent() {
     setValidData([])
     setErrors([])
     setIsUploading(false)
+    setSelectedUploadWorkflow(null)
   }
 
   const openPersonModal = async (letter) => {
@@ -301,43 +360,21 @@ function DashboardContent() {
     }
   }
 
-  // Fetch workflows for workflow selection
-  useEffect(() => {
-    fetchWorkflows()
-  }, [])
-
-  const fetchWorkflows = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('workflows')
-        .select('id, name, is_default')
-        .eq('is_active', true)
-        .order('is_default', { ascending: false })
-
-      if (!error) {
-        setWorkflows(data || [])
-        // Auto-select default workflow
-        const defaultWorkflow = data?.find(w => w.is_default)
-        if (defaultWorkflow) {
-          setSelectedWorkflow(defaultWorkflow.id)
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching workflows:', error)
-    }
-  }
-
-  const startWorkflow = async (debtorId, debtorName) => {
-    if (!selectedWorkflow) {
+  const startWorkflow = async (debtorId, debtorName, workflowId = null) => {
+    const workflowToUse = workflowId || selectedWorkflow
+    
+    if (!workflowToUse) {
       toast.error('Please select a workflow first')
       return
     }
 
     try {
-      const result = await startWorkflowForDebtor(debtorId, selectedWorkflow)
+      const result = await startWorkflowForDebtor(debtorId, workflowToUse)
       if (result.success) {
-        toast.success(`Workflow started for ${debtorName}`)
+        const workflow = workflows.find(w => w.id === workflowToUse)
+        toast.success(`${workflow?.name || 'Workflow'} started for ${debtorName}`)
         fetchLetters() // Refresh to show updates
+        setShowWorkflowDropdown(null) // Close dropdown
       } else {
         toast.error(result.error)
       }
@@ -361,6 +398,11 @@ function DashboardContent() {
       toast.error('Failed to stop workflow')
     }
   }
+
+  // Get default workflows for quick actions
+  const defaultWorkflows = workflows.filter(w => w.is_default)
+  const hasMultipleDefaults = defaultWorkflows.length > 1
+  const singleDefaultWorkflow = defaultWorkflows.length === 1 ? defaultWorkflows[0] : null
 
   if (loading) {
     return (
@@ -566,6 +608,130 @@ function DashboardContent() {
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
+                          
+                          {/* Workflow Actions */}
+                          {currentPlan !== 'free' && (
+                            <div className="relative">
+                              {/* Enterprise: Multiple defaults dropdown */}
+                              {currentPlan === 'enterprise' && hasMultipleDefaults ? (
+                                <div className="relative">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setShowWorkflowDropdown(
+                                      showWorkflowDropdown === letter.debtors.id ? null : letter.debtors.id
+                                    )}
+                                    className="flex items-center gap-1"
+                                  >
+                                    <Play className="h-3 w-3" />
+                                    Start Workflow
+                                    <ChevronDown className="h-3 w-3" />
+                                  </Button>
+                                  
+                                  {showWorkflowDropdown === letter.debtors.id && (
+                                    <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-50">
+                                      <div className="py-1">
+                                        <div className="px-3 py-2 text-xs font-medium text-gray-500 border-b">
+                                          Default Workflows
+                                        </div>
+                                        {defaultWorkflows.map((workflow) => (
+                                          <button
+                                            key={workflow.id}
+                                            onClick={() => startWorkflow(letter.debtors.id, letter.debtors.name, workflow.id)}
+                                            className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                                          >
+                                            <Star className="h-3 w-3 text-yellow-500 fill-current" />
+                                            {workflow.name}
+                                          </button>
+                                        ))}
+                                        
+                                        {workflows.filter(w => !w.is_default).length > 0 && (
+                                          <>
+                                            <div className="px-3 py-2 text-xs font-medium text-gray-500 border-t border-b">
+                                              Other Workflows
+                                            </div>
+                                            {workflows.filter(w => !w.is_default).map((workflow) => (
+                                              <button
+                                                key={workflow.id}
+                                                onClick={() => startWorkflow(letter.debtors.id, letter.debtors.name, workflow.id)}
+                                                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                              >
+                                                {workflow.name}
+                                              </button>
+                                            ))}
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              ) : singleDefaultWorkflow ? (
+                                /* Professional/Free: Single default workflow */
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => startWorkflow(letter.debtors.id, letter.debtors.name, singleDefaultWorkflow.id)}
+                                  className="flex items-center gap-1"
+                                >
+                                  <Star className="h-3 w-3 text-yellow-500 fill-current" />
+                                  Start {singleDefaultWorkflow.name}
+                                </Button>
+                              ) : workflows.length > 0 ? (
+                                /* No default workflows - show dropdown of all workflows */
+                                <div className="relative">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setShowWorkflowDropdown(
+                                      showWorkflowDropdown === letter.debtors.id ? null : letter.debtors.id
+                                    )}
+                                    className="flex items-center gap-1"
+                                  >
+                                    <Play className="h-3 w-3" />
+                                    Start Workflow
+                                    <ChevronDown className="h-3 w-3" />
+                                  </Button>
+                                  
+                                  {showWorkflowDropdown === letter.debtors.id && (
+                                    <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-50">
+                                      <div className="py-1">
+                                        {workflows.map((workflow) => (
+                                          <button
+                                            key={workflow.id}
+                                            onClick={() => startWorkflow(letter.debtors.id, letter.debtors.name, workflow.id)}
+                                            className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                          >
+                                            {workflow.name}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                /* No workflows available */
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled
+                                  className="opacity-50 cursor-not-allowed"
+                                >
+                                  <Crown className="h-3 w-3 mr-1" />
+                                  No Workflows
+                                </Button>
+                              )}
+                              
+                              {/* Stop Workflow Button */}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => stopWorkflow(letter.debtors.id, letter.debtors.name)}
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                <Square className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -619,6 +785,51 @@ function DashboardContent() {
                 {uploadStep === 2 && (
                   <div>
                     <h4 className="text-lg font-medium text-gray-900 mb-4">Review Data</h4>
+                    
+                    {/* Workflow Selection for Enterprise */}
+                    {currentPlan === 'enterprise' && workflows.length > 0 && (
+                      <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                        <h5 className="font-medium text-purple-900 mb-3">Workflow Assignment</h5>
+                        <div className="space-y-2">
+                          <label className="flex items-center">
+                            <input
+                              type="radio"
+                              name="workflow"
+                              value=""
+                              checked={selectedUploadWorkflow === null}
+                              onChange={() => setSelectedUploadWorkflow(null)}
+                              className="mr-2"
+                            />
+                            <span className="text-sm text-purple-800">
+                              <Star className="w-4 h-4 inline text-yellow-500 mr-1" />
+                              Use Default Workflow ({workflows.find(w => w.is_default)?.name || 'None'})
+                            </span>
+                          </label>
+                          
+                          {workflows.filter(w => !w.is_default && w.is_active).map((workflow) => (
+                            <label key={workflow.id} className="flex items-center">
+                              <input
+                                type="radio"
+                                name="workflow"
+                                value={workflow.id}
+                                checked={selectedUploadWorkflow === workflow.id}
+                                onChange={() => setSelectedUploadWorkflow(workflow.id)}
+                                className="mr-2"
+                              />
+                              <span className="text-sm text-purple-800">
+                                {workflow.name}
+                                <span className="ml-2 px-1.5 py-0.5 bg-purple-100 text-purple-700 text-xs rounded">
+                                  Active Workflow
+                                </span>
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                        <p className="text-xs text-purple-600 mt-2">
+                          Select which workflow these debtors will be assigned to. Active workflows can run in parallel.
+                        </p>
+                      </div>
+                    )}
                     
                     <div className="mb-6">
                       <div className="grid grid-cols-3 gap-4 mb-4">

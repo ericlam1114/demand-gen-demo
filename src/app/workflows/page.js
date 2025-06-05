@@ -13,7 +13,13 @@ import {
   getUpgradeMessage,
   getWorkflowLimits,
   canCreateWorkflow,
-  getWorkflowUpgradeMessage 
+  getWorkflowUpgradeMessage,
+  getDefaultWorkflowLimits,
+  canSetAsDefault,
+  getDefaultWorkflowMessage,
+  getActiveWorkflowLimits,
+  canCreateActiveWorkflow,
+  getWorkflowMessage
 } from '@/lib/plan-restrictions'
 import { 
   Plus, 
@@ -105,6 +111,14 @@ function WorkflowsContent() {
   const allowedStepTypes = getAllowedStepTypes(currentPlan)
   const workflowLimits = getWorkflowLimits(currentPlan)
   const canCreateMore = canCreateWorkflow(currentPlan, workflows.length)
+  
+  // Default and active workflow limits
+  const defaultWorkflowLimits = getDefaultWorkflowLimits(currentPlan)
+  const activeWorkflowLimits = getActiveWorkflowLimits(currentPlan)
+  const currentDefaultCount = workflows.filter(w => w.is_default).length
+  const currentActiveCount = workflows.filter(w => !w.is_default && w.is_active).length
+  const canSetMoreDefaults = canSetAsDefault(currentPlan, currentDefaultCount)
+  const canCreateMoreActive = canCreateActiveWorkflow(currentPlan, currentActiveCount)
 
   useEffect(() => {
     fetchWorkflows()
@@ -197,6 +211,14 @@ function WorkflowsContent() {
       return
     }
 
+    // Determine if this should be default based on plan and existing workflows
+    let shouldBeDefault = false
+    if (workflows.length === 0) {
+      shouldBeDefault = true // First workflow becomes default
+    } else if (currentPlan !== 'enterprise' && currentDefaultCount === 0) {
+      shouldBeDefault = true // Non-enterprise plans need a default
+    }
+
     setSelectedWorkflow(null)
     setWorkflowSteps([
       {
@@ -210,7 +232,7 @@ function WorkflowsContent() {
     setWorkflowForm({
       name: 'New Workflow',
       description: '',
-      is_default: workflows.length === 0, // First workflow becomes default
+      is_default: shouldBeDefault,
       is_active: true
     })
     setIsEditing(true)
@@ -368,28 +390,43 @@ function WorkflowsContent() {
     try {
       // Get the current workflow to check if it's already default
       const currentWorkflow = workflows.find(w => w.id === workflowId)
+      
       if (currentWorkflow?.is_default) {
-        toast.error('This workflow is already set as default')
-        return
+        // If it's already default, remove the default status
+        const { error } = await supabase
+          .from('workflows')
+          .update({ is_default: false })
+          .eq('id', workflowId)
+
+        if (error) throw error
+        toast.success('Default workflow removed')
+      } else {
+        // Check if we can set more defaults based on plan
+        if (!canSetMoreDefaults) {
+          toast.error(getDefaultWorkflowMessage(currentPlan))
+          return
+        }
+
+        // For non-enterprise plans, remove default from all others first
+        if (currentPlan !== 'enterprise') {
+          const { error: clearError } = await supabase
+            .from('workflows')
+            .update({ is_default: false })
+            .neq('id', workflowId)
+
+          if (clearError) throw clearError
+        }
+
+        // Set this one as default
+        const { error } = await supabase
+          .from('workflows')
+          .update({ is_default: true })
+          .eq('id', workflowId)
+
+        if (error) throw error
+        toast.success('Default workflow updated')
       }
 
-      // First, remove default from all workflows
-      const { error: clearError } = await supabase
-        .from('workflows')
-        .update({ is_default: false })
-        .neq('id', workflowId)
-
-      if (clearError) throw clearError
-
-      // Then set this one as default
-      const { error } = await supabase
-        .from('workflows')
-        .update({ is_default: true })
-        .eq('id', workflowId)
-
-      if (error) throw error
-
-      toast.success('Default workflow updated')
       fetchWorkflows()
     } catch (error) {
       console.error('Error updating default workflow:', error)
@@ -417,23 +454,72 @@ function WorkflowsContent() {
         )}
 
         {/* Workflow Limits Info */}
-        {workflowsEnabled && workflowLimits.limit !== -1 && (
-          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="flex items-center justify-between">
+        {workflowsEnabled && (
+          <div className="mb-6 space-y-4">
+            {/* Overall Plan Description */}
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg">
               <div className="flex items-center">
-                <AlertCircle className="w-5 h-5 text-blue-600 mr-2" />
-                <span className="text-sm text-blue-800">
-                  <strong>{workflows.length}/{workflowLimits.limit}</strong> workflows used
-                  {currentPlan === 'professional' && ' (1 can run at a time)'}
+                <AlertCircle className="w-5 h-5 text-slate-600 mr-2" />
+                <span className="text-sm text-slate-800">
+                  <strong>{currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1)} Plan:</strong> {getWorkflowMessage(currentPlan)}
                 </span>
               </div>
-              {!canCreateMore && (
-                <Button size="sm" variant="outline">
-                  <Crown className="w-4 h-4 mr-2" />
-                  Upgrade for More
-                </Button>
-              )}
             </div>
+            
+            {/* Workflow Count Limits */}
+            {workflowLimits.limit !== -1 && (
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <AlertCircle className="w-5 h-5 text-blue-600 mr-2" />
+                    <span className="text-sm text-blue-800">
+                      <strong>{workflows.length}/{workflowLimits.limit}</strong> total workflows used
+                      {currentPlan === 'professional' && ' (only 1 can run at a time)'}
+                    </span>
+                  </div>
+                  {!canCreateMore && (
+                    <Button size="sm" variant="outline">
+                      <Crown className="w-4 h-4 mr-2" />
+                      Upgrade for More
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {/* Default Workflow Status */}
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <Star className="w-5 h-5 text-yellow-600 mr-2" />
+                  <span className="text-sm text-yellow-800">
+                    <strong>Default Workflow:</strong> {currentDefaultCount > 0 ? workflows.find(w => w.is_default)?.name || 'Unnamed' : 'None set'}
+                    {currentPlan === 'enterprise' && ' (for quick actions & fallback)'}
+                  </span>
+                </div>
+                {currentDefaultCount === 0 && (
+                  <span className="text-xs text-yellow-700">
+                    Set one workflow as default
+                  </span>
+                )}
+              </div>
+            </div>
+            
+            {/* Active Workflows for Enterprise */}
+            {currentPlan === 'enterprise' && (
+              <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <Crown className="w-5 h-5 text-purple-600 mr-2" />
+                    <span className="text-sm text-purple-800">
+                      <strong>Active Workflows:</strong> {currentActiveCount} available for API/CSV assignment
+                      <br />
+                      <span className="text-xs text-purple-600">These can run in parallel and be assigned via API or CSV upload</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -476,6 +562,11 @@ function WorkflowsContent() {
                         <div className="font-medium text-sm truncate">{workflow.name}</div>
                         <div className="text-xs text-gray-500 mt-1">
                           {workflow.workflow_steps?.length || 0} steps
+                          {currentPlan === 'enterprise' && !workflow.is_default && (
+                            <span className="ml-2 px-1.5 py-0.5 bg-purple-100 text-purple-700 text-xs rounded">
+                              API/CSV
+                            </span>
+                          )}
                         </div>
                       </div>
                       <button
@@ -489,9 +580,17 @@ function WorkflowsContent() {
                           workflow.is_default
                             ? 'text-yellow-500 hover:text-yellow-600'
                             : 'text-gray-400 hover:text-gray-600'
-                        } ${!workflowsEnabled ? 'pointer-events-none' : ''}`}
-                        title={workflow.is_default ? 'Default workflow' : 'Set as default'}
-                        disabled={!workflowsEnabled}
+                        } ${!workflowsEnabled ? 'pointer-events-none' : ''} ${
+                          !workflow.is_default && !canSetMoreDefaults ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                        title={
+                          workflow.is_default 
+                            ? 'Default workflow - click to remove' 
+                            : canSetMoreDefaults 
+                              ? 'Set as default' 
+                              : 'Default workflow already set'
+                        }
+                        disabled={!workflowsEnabled || (!workflow.is_default && !canSetMoreDefaults)}
                       >
                         {workflow.is_default ? (
                           <Star className="w-4 h-4 fill-current" />

@@ -1,129 +1,74 @@
 import { NextResponse } from 'next/server'
-import { createServerClient } from '@/lib/supabase'
-import { v4 as uuidv4 } from 'uuid'
+import { supabase } from '@/lib/supabase'
 
 export async function POST(request) {
   try {
-    const { data: csvData, workflowId } = await request.json()
+    const { data, workflowId = null } = await request.json()
     
-    if (!csvData || !Array.isArray(csvData)) {
-      return NextResponse.json(
-        { error: 'Invalid CSV data' },
-        { status: 400 }
-      )
+    if (!data || !Array.isArray(data)) {
+      return NextResponse.json({ error: 'Invalid data format' }, { status: 400 })
     }
 
-    const supabase = createServerClient()
     let processed = 0
-    let errors = []
+    const errors = []
 
-    // Get default workflow if none specified
-    let targetWorkflowId = workflowId
-    if (!targetWorkflowId) {
-      const { data: defaultWorkflow, error: workflowError } = await supabase
-        .from('workflows')
-        .select('id')
-        .eq('is_default', true)
-        .eq('is_active', true)
-        .single()
-
-      if (workflowError || !defaultWorkflow) {
-        return NextResponse.json(
-          { error: 'No default workflow found. Please create a workflow first.' },
-          { status: 400 }
-        )
-      }
-      targetWorkflowId = defaultWorkflow.id
-    }
-
-    // Process each debtor
-    for (const row of csvData) {
+    for (const record of data) {
       try {
-        // Required fields
-        if (!row.name || !row.email || !row.balance) {
-          errors.push(`Missing required fields for ${row.name || 'unknown'}: name, email, and balance are required`)
-          continue
-        }
-
-        // Convert balance to cents
-        const balanceCents = Math.round(parseFloat(row.balance) * 100)
-        
-        // Prepare debtor data with all available fields
-        const debtorData = {
-          name: row.name,
-          email: row.email,
-          balance_cents: balanceCents,
-          state: row.state || null,
-          phone: row.phone || null,
-          address: row.address || null,
-          city: row.city || null,
-          zip: row.zip || row.zipcode || row.postal_code || null,
-          country: row.country || 'US',
-          account_number: row.account_number || row.account || row.acct_number || null,
-          original_creditor: row.original_creditor || row.creditor || row.client || null,
-          notes: row.notes || row.memo || row.description || null,
-          agency_id: null // Will be set properly with auth
-        }
-        
-        // Insert debtor
+        // Create debtor with all available fields
         const { data: debtor, error: debtorError } = await supabase
           .from('debtors')
-          .insert(debtorData)
+          .insert({
+            name: record.name,
+            email: record.email,
+            state: record.state?.toUpperCase(),
+            balance_cents: record.balance_cents,
+            phone: record.phone || null,
+            address: record.address || null,
+            city: record.city || null,
+            zip: record.zip || null,
+            account_number: record.account_number || null,
+            original_creditor: record.original_creditor || null,
+            workflow_id: workflowId // Assign specific workflow for Enterprise
+          })
           .select()
           .single()
 
         if (debtorError) {
-          errors.push(`Failed to insert debtor ${row.name}: ${debtorError.message}`)
+          errors.push(`${record.name}: ${debtorError.message}`)
           continue
         }
 
-        // Assign debtor to workflow
-        const { error: assignmentError } = await supabase
-          .from('debtor_workflows')
+        // Create initial letter
+        const { error: letterError } = await supabase
+          .from('letters')
           .insert({
             debtor_id: debtor.id,
-            workflow_id: targetWorkflowId,
-            current_step_number: 1,
-            status: 'active',
-            next_action_at: new Date().toISOString() // Execute first step immediately
+            status: 'draft'
           })
 
-        if (assignmentError) {
-          errors.push(`Failed to assign ${row.name} to workflow: ${assignmentError.message}`)
+        if (letterError) {
+          errors.push(`${record.name}: Failed to create letter`)
           continue
         }
 
         processed++
       } catch (error) {
-        console.error(`Error processing row for ${row.name}:`, error)
-        errors.push(`Failed to process ${row.name}: ${error.message}`)
+        errors.push(`${record.name}: ${error.message}`)
       }
     }
 
-    // Trigger workflow execution for immediate steps
-    await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/execute-workflows`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    }).catch(error => {
-      console.error('Failed to trigger workflow execution:', error)
-    })
-
-    return NextResponse.json({
-      success: true,
-      processed,
-      errors: errors.length > 0 ? errors : undefined,
-      message: `Successfully assigned ${processed} debtors to workflow. ${processed} will receive their first demand letter immediately.`,
+    return NextResponse.json({ 
+      processed, 
+      errors: errors.length > 0 ? errors : null,
+      message: `Successfully processed ${processed} records${errors.length > 0 ? ` with ${errors.length} errors` : ''}`,
       supportedFields: {
-        required: ['name', 'email', 'balance'],
-        optional: ['state', 'phone', 'address', 'city', 'zip/zipcode/postal_code', 'country', 'account_number/account/acct_number', 'original_creditor/creditor/client', 'notes/memo/description']
+        required: ['name', 'email', 'balance', 'state'],
+        optional: ['phone', 'address', 'city', 'zip', 'account_number', 'original_creditor']
       }
     })
 
   } catch (error) {
     console.error('CSV processing error:', error)
-    return NextResponse.json(
-      { error: 'Internal server error', details: error.message },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 } 
