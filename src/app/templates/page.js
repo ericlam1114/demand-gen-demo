@@ -62,20 +62,33 @@ function TemplatesContent() {
   }
 
   useEffect(() => {
-    fetchTemplates()
-  }, [])
+    if (profile?.agency_id) {
+      fetchTemplates()
+    }
+  }, [profile?.agency_id])
 
   const fetchTemplates = async () => {
     try {
+      console.log('[Templates] Fetching templates for agency:', profile?.agency_id)
+      
+      if (!profile?.agency_id) {
+        console.log('[Templates] No agency_id found, skipping fetch')
+        setLoading(false)
+        return
+      }
+
       const { data, error } = await supabase
         .from('templates')
         .select('*')
+        .eq('agency_id', profile.agency_id)
         .order('created_at', { ascending: false })
+
+      console.log('[Templates] Query result:', { data: data?.length || 0, error })
 
       if (error) throw error
       setTemplates(data || [])
     } catch (error) {
-      console.error('Error fetching templates:', error)
+      console.error('[Templates] Error fetching templates:', error)
       toast.error('Failed to load templates')
     } finally {
       setLoading(false)
