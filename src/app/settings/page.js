@@ -21,7 +21,7 @@ import {
 import toast from 'react-hot-toast'
 
 function SettingsContent() {
-  const { profile, loading: authLoading } = useAuth()
+  const { profile, agency, loading: authLoading } = useAuth()
   const [settings, setSettings] = useState({
     company_name: '',
     company_address: '',
@@ -41,27 +41,17 @@ function SettingsContent() {
     secondary_color: '#64748b'
   })
   
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false) // Start with false, only true while fetching
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
-    // Only try to fetch settings if auth is done loading and we have a profile
-    if (!authLoading && profile?.agency_id) {
-      fetchSettings()
-    } else if (!authLoading && !profile?.agency_id) {
-      // If auth is done but no profile/agency, show error
-      setError('No agency access. Please log in with a valid account.')
-      setLoading(false)
-    }
-  }, [profile?.agency_id, authLoading])
-
   const fetchSettings = async () => {
+    setLoading(true)
     try {
-      console.log('[Settings] Fetching settings for agency:', profile?.agency_id)
+      console.log('[Settings] Fetching settings for agency:', agency?.id)
       
-      if (!profile?.agency_id) {
-        console.log('[Settings] No agency_id found, showing error')
+      if (!agency?.id) {
+        console.log('[Settings] No agency id found, showing error')
         setError('No agency access. Please log in with a valid account.')
         setLoading(false)
         return
@@ -70,7 +60,7 @@ function SettingsContent() {
       const { data, error } = await supabase
         .from('company_settings')
         .select('*')
-        .eq('agency_id', profile.agency_id)
+        .eq('agency_id', agency.id)
         .limit(1)
 
       console.log('[Settings] Query result:', { hasData: !!data, dataLength: data?.length, error })
@@ -101,6 +91,24 @@ function SettingsContent() {
     }
   }
 
+  useEffect(() => {
+    console.log('[Settings] useEffect running:', { authLoading, agencyId: agency?.id })
+    
+    // If auth is still loading, don't do anything yet
+    if (authLoading) {
+      return
+    }
+    
+    // Auth is done loading
+    if (agency?.id) {
+      fetchSettings()
+    } else {
+      // No agency found after auth loaded
+      setError('No agency access. Please log in with a valid account.')
+      setLoading(false)
+    }
+  }, [agency?.id, authLoading])
+
   const saveSettings = async () => {
     setSaving(true)
     try {
@@ -108,7 +116,7 @@ function SettingsContent() {
       const { data: existingSettings } = await supabase
         .from('company_settings')
         .select('id')
-        .eq('agency_id', profile.agency_id)
+        .eq('agency_id', agency.id)
         .limit(1)
 
       // Handle array result properly
@@ -128,12 +136,12 @@ function SettingsContent() {
           .eq('id', existingId)
       } else {
         // Insert new
-        console.log('[Settings] Creating new settings for agency:', profile.agency_id)
+        console.log('[Settings] Creating new settings for agency:', agency.id)
         result = await supabase
           .from('company_settings')
           .insert({
             ...settings,
-            agency_id: profile.agency_id,
+            agency_id: agency.id,
             created_by: profile.id
           })
       }
@@ -153,8 +161,8 @@ function SettingsContent() {
     setSettings(prev => ({ ...prev, [field]: value }))
   }
 
-  // Show loading state while auth is loading
-  if (authLoading) {
+  // Show loading state while auth is loading or settings are loading
+  if (authLoading || loading) {
     return (
       <div className="p-8">
         <div className="max-w-4xl mx-auto">
@@ -180,24 +188,6 @@ function SettingsContent() {
             <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-red-800 mb-2">Access Error</h3>
             <p className="text-red-600">{error}</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // Show loading state while fetching settings
-  if (loading) {
-    return (
-      <div className="p-8">
-        <div className="max-w-4xl mx-auto">
-          <div className="animate-pulse">
-            <div className="h-8 bg-gray-200 rounded w-1/4 mb-4"></div>
-            <div className="space-y-4">
-              <div className="h-20 bg-gray-200 rounded"></div>
-              <div className="h-20 bg-gray-200 rounded"></div>
-              <div className="h-20 bg-gray-200 rounded"></div>
-            </div>
           </div>
         </div>
       </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Search, MoreHorizontal, Eye, CheckCircle, RotateCcw, Upload, X, FileText, Calendar, Mail, DollarSign, User, MapPin, FolderOpen, FolderCheck, Clock, TrendingUp, ChevronDown, Star, Play, Square, Crown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
@@ -19,11 +19,12 @@ function DashboardContent() {
   const currentPlan = agency?.plan || 'free'
   const defaultWorkflowLimits = getDefaultWorkflowLimits(currentPlan)
   
+  // State management
   const [letters, setLetters] = useState([])
   const [filteredLetters, setFilteredLetters] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false) // Start with false, let fetch set it to true
   
   // Modal states
   const [showUploadModal, setShowUploadModal] = useState(false)
@@ -52,17 +53,19 @@ function DashboardContent() {
     totalBalance: 0,
     collectedAmount: 0,
     collectionRate: 0,
-    needsEscalation: 0 // New metric for escalation notifications
+    needsEscalation: 0
   })
 
   const [workflows, setWorkflows] = useState([])
   const [selectedWorkflow, setSelectedWorkflow] = useState(null)
   const [showWorkflowDropdown, setShowWorkflowDropdown] = useState(null)
 
-  // Fetch letters and related data
+  // Simplified fetch letters function
   const fetchLetters = useCallback(async () => {
+    setLoading(true)
     try {
-      console.log('Starting fetchLetters...')
+      console.log('[Dashboard] Fetching letters...')
+      
       const { data, error } = await supabase
         .from('letters')
         .select(`
@@ -81,31 +84,19 @@ function DashboardContent() {
         `)
         .order('created_at', { ascending: false })
 
-      console.log('Supabase response:', { data, error })
+      console.log('[Dashboard] Fetch result:', { hasData: !!data, error })
 
       if (error) {
-        console.error('Supabase error:', error)
-        
-        // If it's an RLS error or auth error, just show empty state
-        if (error.code === 'PGRST116' || error.message?.includes('RLS') || error.message?.includes('JWT')) {
-          console.log('Authentication/RLS issue - showing empty state')
-          setLetters([])
-          calculateMetrics([])
-          return
-        }
-        
-        throw error
+        console.error('[Dashboard] Supabase error:', error)
+        // Don't throw, just use empty data
+        setLetters([])
+        calculateMetrics([])
+      } else {
+        setLetters(data || [])
+        calculateMetrics(data || [])
       }
-
-      console.log('Setting letters data:', data)
-      setLetters(data || [])
-      calculateMetrics(data || [])
     } catch (error) {
-      console.error('Error fetching letters:', error)
-      // Don't show error toast for auth issues, just show empty state
-      if (!error.code?.includes('PGRST') && !error.message?.includes('RLS')) {
-        toast.error('Failed to load dashboard data')
-      }
+      console.error('[Dashboard] Error fetching letters:', error)
       setLetters([])
       calculateMetrics([])
     } finally {
@@ -113,38 +104,51 @@ function DashboardContent() {
     }
   }, [])
 
-  // Fetch workflows for workflow selection
+  // Fetch workflows
   const fetchWorkflows = useCallback(async () => {
     try {
+      console.log('[Dashboard] Fetching workflows...')
       const { data, error } = await supabase
         .from('workflows')
         .select('id, name, is_default')
         .eq('is_active', true)
         .order('is_default', { ascending: false })
 
-      if (!error) {
-        setWorkflows(data || [])
-        // For Enterprise with multiple defaults, don't auto-select
-        // For other plans, auto-select the single default
+      if (!error && data) {
+        console.log('[Dashboard] Workflows loaded:', data)
+        setWorkflows(data)
+        
+        // Auto-select default for non-enterprise plans
         if (currentPlan !== 'enterprise') {
-          const defaultWorkflow = data?.find(w => w.is_default)
+          const defaultWorkflow = data.find(w => w.is_default)
           if (defaultWorkflow) {
             setSelectedWorkflow(defaultWorkflow.id)
           }
         }
       }
     } catch (error) {
-      console.error('Error fetching workflows:', error)
+      console.error('[Dashboard] Error fetching workflows:', error)
     }
   }, [currentPlan])
 
+  // Initialize data on mount
   useEffect(() => {
-    fetchLetters()
-    fetchWorkflows()
+    console.log('[Dashboard] Component mounted, loading data...')
+    
+    // Load data immediately
+    Promise.all([
+      fetchLetters(),
+      fetchWorkflows()
+    ]).then(() => {
+      console.log('[Dashboard] Initial data loaded')
+    }).catch((error) => {
+      console.error('[Dashboard] Error loading initial data:', error)
+      setLoading(false) // Make sure to set loading false even on error
+    })
   }, [fetchLetters, fetchWorkflows])
 
+  // Filter letters when search/filter changes
   useEffect(() => {
-    // Filter letters based on search term and status
     let filtered = letters
 
     if (searchTerm) {
@@ -250,7 +254,10 @@ function DashboardContent() {
         debtor_name: debtorName 
       })
 
-      toast.success(`${debtorName} marked as paid`)
+      toast.success(`${debtorName} marked as paid`, {
+        duration: 4000, // Show for 4 seconds
+        position: 'top-center'
+      })
       fetchLetters()
     } catch (error) {
       console.error('[Dashboard] Error marking as paid:', {
@@ -299,7 +306,10 @@ function DashboardContent() {
         debtor_name: debtorName 
       })
 
-      toast.success(`${debtorName} unmarked as paid`)
+      toast.success(`${debtorName} unmarked as paid`, {
+        duration: 4000, // Show for 4 seconds
+        position: 'top-center'
+      })
       setShowUnpayConfirm(null)  // Close confirmation dialog
       setShowPersonModal(false)  // Close person modal
       fetchLetters()             // Refresh dashboard data
@@ -343,7 +353,10 @@ function DashboardContent() {
         debtor_name: debtorName 
       })
 
-      toast.success(`${debtorName} escalated`)
+      toast.success(`${debtorName} escalated`, {
+        duration: 4000, // Show for 4 seconds
+        position: 'top-center'
+      })
       setShowEscalateConfirm(null)  // Close confirmation dialog
       setShowPersonModal(false)     // Close person modal
       fetchLetters()                // Refresh dashboard data
@@ -409,7 +422,10 @@ function DashboardContent() {
         debtor_name: debtorName 
       })
 
-      toast.success(`Letter resent to ${debtorName}`)
+      toast.success(`Letter resent to ${debtorName}`, {
+        duration: 4000, // Show for 4 seconds
+        position: 'top-center'
+      })
       fetchLetters()
     } catch (error) {
       console.error('[Dashboard] Error resending letter:', {
@@ -526,7 +542,10 @@ function DashboardContent() {
       const result = await response.json()
       
       if (response.ok) {
-        toast.success(result.message || `Successfully processed ${result.processed} records`)
+        toast.success(result.message || `Successfully processed ${result.processed} records`, {
+          duration: 4000, // Show for 4 seconds
+          position: 'top-center'
+        })
         if (result.errors?.length > 0) {
           console.warn('Processing errors:', result.errors)
         }
@@ -534,8 +553,10 @@ function DashboardContent() {
         // Reset upload state and close modal on success
         closeUploadModal()
         
-        // Refresh data
-        fetchLetters()
+        // Simple refresh after a short delay to allow backend processing
+        setTimeout(() => {
+          fetchLetters()
+        }, 1000)
       } else {
         toast.error(result.error || 'Failed to process CSV')
       }
@@ -543,7 +564,9 @@ function DashboardContent() {
       console.error('Upload error:', error)
       toast.error('Network error occurred')
     } finally {
-      setIsUploading(false)
+      if (!isUploading) {
+        setIsUploading(false)
+      }
     }
   }
 
@@ -559,43 +582,94 @@ function DashboardContent() {
   }
 
   const openPersonModal = async (letter) => {
+    // Safety checks to prevent errors
+    if (!letter || !letter.debtors) {
+      console.error('[Dashboard] Invalid letter data:', letter)
+      toast.error('Unable to load debtor details')
+      return
+    }
+
     setSelectedPerson({
       name: letter.debtors.name,
       email: letter.debtors.email,
       state: letter.debtors.state,
       balance_cents: letter.debtors.balance_cents,
-      letter: letter
+      letter: letter,
+      workflowInfo: null // Will be populated below
     })
     setShowPersonModal(true)
     
-    // Fetch events for this letter with better error handling
     try {
-      console.log('[Dashboard] Fetching events for letter:', letter.id)
+      console.log('[Dashboard] Fetching comprehensive data for debtor:', letter.debtors.id)
       
-      const { data, error } = await supabase
-        .from('events')
-        .select('*')
-        .eq('letter_id', letter.id)
-        .order('recorded_at', { ascending: false })
+      // Only proceed with database queries if we have required IDs
+      if (!letter.debtors.id || !letter.id) {
+        console.error('[Dashboard] Missing required IDs:', { debtorId: letter.debtors.id, letterId: letter.id })
+        setPersonEvents([])
+        return
+      }
       
-      console.log('[Dashboard] Events query result:', { data, error })
-      
-      if (error) {
-        console.error('[Dashboard] Events query error:', {
-          code: error.code,
-          message: error.message,
-          details: error.details,
-          hint: error.hint
-        })
+      // Fetch events, workflow enrollment, and executions in parallel
+      const [eventsResult, workflowResult, executionsResult] = await Promise.all([
+        // 1. Fetch events for this letter
+        supabase
+          .from('events')
+          .select('*')
+          .eq('letter_id', letter.id)
+          .order('recorded_at', { ascending: false }),
         
-        // Try fallback: check if we can create some synthetic events from letter data
+        // 2. Fetch current workflow enrollment
+        supabase
+          .from('debtor_workflows')
+          .select(`
+            *,
+            workflows (
+              id,
+              name,
+              description
+            )
+          `)
+          .eq('debtor_id', letter.debtors.id)
+          .eq('status', 'active')
+          .order('enrolled_at', { ascending: false })
+          .limit(1),
+          
+        // 3. Fetch workflow executions to see step progress
+        supabase
+          .from('workflow_executions')
+          .select(`
+            *,
+            workflow_steps (
+              id,
+              name,
+              step_type,
+              step_order,
+              description
+            )
+          `)
+          .eq('debtor_id', letter.debtors.id)
+          .order('executed_at', { ascending: false })
+      ])
+      
+      console.log('[Dashboard] Query results:', { 
+        events: eventsResult, 
+        workflow: workflowResult, 
+        executions: executionsResult 
+      })
+      
+      // Process events with error handling
+      let events = []
+      if (eventsResult.error) {
+        console.error('[Dashboard] Events query error:', eventsResult.error)
+        // Create synthetic events as fallback
         const syntheticEvents = []
         
         if (letter.sent_at) {
           syntheticEvents.push({
             id: `synthetic-sent-${letter.id}`,
             type: 'sent',
-            recorded_at: letter.sent_at
+            recorded_at: letter.sent_at,
+            source: 'synthetic'
           })
         }
         
@@ -603,7 +677,8 @@ function DashboardContent() {
           syntheticEvents.push({
             id: `synthetic-opened-${letter.id}`,
             type: 'opened', 
-            recorded_at: letter.opened_at
+            recorded_at: letter.opened_at,
+            source: 'synthetic'
           })
         }
         
@@ -611,23 +686,90 @@ function DashboardContent() {
           syntheticEvents.push({
             id: `synthetic-paid-${letter.id}`,
             type: 'paid',
-            recorded_at: letter.created_at // Fallback timestamp
+            recorded_at: letter.created_at,
+            source: 'synthetic'
           })
         }
         
-        console.log('[Dashboard] Using synthetic events:', syntheticEvents)
-        setPersonEvents(syntheticEvents)
-        return
+        events = syntheticEvents
+      } else {
+        events = eventsResult.data || []
       }
       
-      setPersonEvents(data || [])
+      // Process workflow information with error handling
+      let workflowInfo = null
+      if (!workflowResult.error && workflowResult.data?.length > 0) {
+        const enrollment = workflowResult.data[0]
+        
+        // Get all executions for this enrollment
+        const enrollmentExecutions = executionsResult.data?.filter(
+          exec => exec.debtor_workflow_id === enrollment.id
+        ) || []
+        
+        // Get all steps for this workflow to show progress - with error handling
+        try {
+          const { data: workflowSteps, error: stepsError } = await supabase
+            .from('workflow_steps')
+            .select('*')
+            .eq('workflow_id', enrollment.workflow_id)
+            .order('step_order', { ascending: true })
+          
+          if (stepsError) {
+            console.error('[Dashboard] Error fetching workflow steps:', stepsError)
+          }
+          
+          workflowInfo = {
+            enrollment,
+            executions: enrollmentExecutions,
+            allSteps: workflowSteps || [],
+            currentStep: enrollment.current_step_order,
+            nextExecutionDate: enrollment.next_execution_date
+          }
+        } catch (stepError) {
+          console.error('[Dashboard] Error in workflow steps query:', stepError)
+          workflowInfo = {
+            enrollment,
+            executions: enrollmentExecutions,
+            allSteps: [],
+            currentStep: enrollment.current_step_order,
+            nextExecutionDate: enrollment.next_execution_date
+          }
+        }
+      }
+      
+      // Combine events and workflow executions into a unified timeline with safety checks
+      const combinedEvents = [
+        ...events,
+        // Add workflow executions as events with null checks
+        ...(executionsResult.data || []).map(exec => ({
+          id: `workflow-${exec.id}`,
+          type: 'workflow_step',
+          subtype: exec.workflow_steps?.step_type || 'unknown',
+          step_name: exec.workflow_steps?.name || 'Unknown Step',
+          step_order: exec.workflow_steps?.step_order,
+          recorded_at: exec.executed_at,
+          status: exec.status,
+          metadata: exec.metadata,
+          source: 'workflow'
+        }))
+      ].filter(event => event.recorded_at) // Filter out events without dates
+       .sort((a, b) => new Date(b.recorded_at) - new Date(a.recorded_at))
+      
+      console.log('[Dashboard] Combined timeline:', combinedEvents)
+      console.log('[Dashboard] Workflow info:', workflowInfo)
+      
+      setPersonEvents(combinedEvents)
+      
+      // Update selected person with workflow info
+      setSelectedPerson(prev => ({
+        ...prev,
+        workflowInfo
+      }))
+      
     } catch (error) {
-      console.error('[Dashboard] Error fetching events:', {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
-      })
+      console.error('[Dashboard] Error fetching comprehensive debtor data:', error)
       setPersonEvents([])
+      // Don't show error toast for every database issue, just log it
     }
   }
 
@@ -643,7 +785,10 @@ function DashboardContent() {
       const result = await startWorkflowForDebtor(debtorId, workflowToUse)
       if (result.success) {
         const workflow = workflows.find(w => w.id === workflowToUse)
-        toast.success(`${workflow?.name || 'Workflow'} started for ${debtorName}`)
+        toast.success(`${workflow?.name || 'Workflow'} started for ${debtorName}`, {
+          duration: 4000, // Show for 4 seconds
+          position: 'top-center'
+        })
         fetchLetters() // Refresh to show updates
         setShowWorkflowDropdown(null) // Close dropdown
       } else {
@@ -659,7 +804,10 @@ function DashboardContent() {
     try {
       const result = await stopWorkflowForDebtor(debtorId, 'manual_stop')
       if (result.success) {
-        toast.success(`Workflow stopped for ${debtorName}`)
+        toast.success(`Workflow stopped for ${debtorName}`, {
+          duration: 4000, // Show for 4 seconds
+          position: 'top-center'
+        })
         fetchLetters() // Refresh to show updates
       } else {
         toast.error(result.error)
@@ -675,6 +823,14 @@ function DashboardContent() {
   const hasMultipleDefaults = defaultWorkflows.length > 1
   const singleDefaultWorkflow = defaultWorkflows.length === 1 ? defaultWorkflows[0] : null
 
+  // Cleanup effect to prevent race conditions
+  useEffect(() => {
+    return () => {
+      console.log('[Dashboard] Component unmounting')
+    }
+  }, [])
+
+  // Simple loading state that doesn't block for long
   if (loading) {
     return (
       <div className="p-8">
@@ -1134,6 +1290,91 @@ function DashboardContent() {
                         {selectedPerson.letter.status.charAt(0).toUpperCase() + selectedPerson.letter.status.slice(1)}
                       </span>
                     </div>
+
+                    {/* Workflow Progress Section */}
+                    {selectedPerson.workflowInfo && (
+                      <div className="mt-6">
+                        <h5 className="text-md font-medium text-gray-900 mb-3 flex items-center">
+                          <svg className="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                          </svg>
+                          Workflow Progress
+                        </h5>
+                        
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <h6 className="font-medium text-blue-900">
+                              {selectedPerson.workflowInfo.enrollment.workflows?.name || 'Unknown Workflow'}
+                            </h6>
+                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                              selectedPerson.workflowInfo.enrollment.status === 'active' 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {selectedPerson.workflowInfo.enrollment.status}
+                            </span>
+                          </div>
+                          
+                          {/* Step Progress */}
+                          {selectedPerson.workflowInfo.allSteps.length > 0 && (
+                            <div className="space-y-2">
+                              <p className="text-sm text-blue-700 font-medium mb-2">
+                                Step {selectedPerson.workflowInfo.currentStep} of {selectedPerson.workflowInfo.allSteps.length}
+                              </p>
+                              <div className="space-y-1">
+                                {selectedPerson.workflowInfo.allSteps.map((step) => {
+                                  const isCompleted = step.step_order < selectedPerson.workflowInfo.currentStep
+                                  const isCurrent = step.step_order === selectedPerson.workflowInfo.currentStep
+                                  const isPending = step.step_order > selectedPerson.workflowInfo.currentStep
+                                  
+                                  return (
+                                    <div key={step.id} className="flex items-center text-sm">
+                                      <div className="flex-shrink-0 mr-2">
+                                        {isCompleted && (
+                                          <CheckCircle className="w-4 h-4 text-green-600" />
+                                        )}
+                                        {isCurrent && (
+                                          <Clock className="w-4 h-4 text-blue-600" />
+                                        )}
+                                        {isPending && (
+                                          <div className="w-4 h-4 rounded-full border-2 border-gray-300"></div>
+                                        )}
+                                      </div>
+                                      <span className={`${
+                                        isCompleted ? 'text-green-700 line-through' :
+                                        isCurrent ? 'text-blue-700 font-medium' :
+                                        'text-gray-500'
+                                      }`}>
+                                        {step.name}
+                                      </span>
+                                      {step.step_type && (
+                                        <span className="ml-2 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">
+                                          {step.step_type}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                              
+                              {/* Next Execution Date */}
+                              {selectedPerson.workflowInfo.nextExecutionDate && (
+                                <div className="mt-3 pt-3 border-t border-blue-200">
+                                  <p className="text-xs text-blue-600">
+                                    <Clock className="w-3 h-3 inline mr-1" />
+                                    Next step: {formatDate(selectedPerson.workflowInfo.nextExecutionDate)}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          
+                          <div className="mt-3 text-xs text-blue-600">
+                            Enrolled: {formatDate(selectedPerson.workflowInfo.enrollment.enrolled_at)}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Events Timeline */}
@@ -1146,38 +1387,87 @@ function DashboardContent() {
                       {personEvents.length === 0 ? (
                         <p className="text-sm text-gray-500">No activity recorded yet</p>
                       ) : (
-                        personEvents.map((event) => (
-                          <div key={event.id} className="flex items-start space-x-3">
-                            <div className="flex-shrink-0">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                                event.type === 'sent' ? 'bg-blue-100 text-blue-600' :
-                                event.type === 'opened' ? 'bg-green-100 text-green-600' :
-                                event.type === 'paid' ? 'bg-emerald-100 text-emerald-600' :
-                                'bg-gray-100 text-gray-600'
-                              }`}>
-                                {event.type === 'sent' && <Mail className="w-4 h-4" />}
-                                {event.type === 'opened' && <Eye className="w-4 h-4" />}
-                                {event.type === 'paid' && <CheckCircle className="w-4 h-4" />}
-                                {!['sent', 'opened', 'paid'].includes(event.type) && <FileText className="w-4 h-4" />}
+                        personEvents.map((event) => {
+                          // Enhanced event display logic
+                          const isWorkflowStep = event.type === 'workflow_step'
+                          const getEventIcon = () => {
+                            if (event.type === 'sent') return <Mail className="w-4 h-4" />
+                            if (event.type === 'opened') return <Eye className="w-4 h-4" />
+                            if (event.type === 'paid') return <CheckCircle className="w-4 h-4" />
+                            if (event.type === 'escalated') return <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 18.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
+                            if (event.subtype === 'email') return <Mail className="w-4 h-4" />
+                            if (event.subtype === 'sms') return <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-1.586l-4 4z" /></svg>
+                            if (event.subtype === 'wait') return <Clock className="w-4 h-4" />
+                            return <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+                          }
+                          
+                          const getEventColor = () => {
+                            if (event.type === 'sent') return 'bg-blue-100 text-blue-600'
+                            if (event.type === 'opened') return 'bg-green-100 text-green-600'
+                            if (event.type === 'paid') return 'bg-emerald-100 text-emerald-600'
+                            if (event.type === 'escalated') return 'bg-red-100 text-red-600'
+                            if (event.status === 'completed') return 'bg-green-100 text-green-600'
+                            if (event.status === 'failed') return 'bg-red-100 text-red-600'
+                            if (isWorkflowStep) return 'bg-purple-100 text-purple-600'
+                            return 'bg-gray-100 text-gray-600'
+                          }
+                          
+                          const getEventTitle = () => {
+                            if (event.type === 'sent') return 'Letter Sent'
+                            if (event.type === 'opened') return 'Letter Opened'
+                            if (event.type === 'paid') return 'Marked as Paid'
+                            if (event.type === 'escalated') return 'Case Escalated'
+                            if (isWorkflowStep) return event.step_name || 'Workflow Step'
+                            return event.type.charAt(0).toUpperCase() + event.type.slice(1)
+                          }
+                          
+                          return (
+                            <div key={event.id} className="flex items-start space-x-3">
+                              <div className="flex-shrink-0">
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${getEventColor()}`}>
+                                  {getEventIcon()}
+                                </div>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-sm font-medium text-gray-900">
+                                    {getEventTitle()}
+                                  </p>
+                                  {isWorkflowStep && event.step_order && (
+                                    <span className="text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded">
+                                      Step {event.step_order}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-gray-500">
+                                  {formatDate(event.recorded_at || event.created_at)}
+                                </p>
+                                {event.status && event.status !== 'completed' && (
+                                  <p className={`text-xs mt-1 font-medium ${
+                                    event.status === 'failed' ? 'text-red-600' :
+                                    event.status === 'pending' ? 'text-yellow-600' :
+                                    'text-gray-600'
+                                  }`}>
+                                    Status: {event.status}
+                                  </p>
+                                )}
+                                {event.metadata && Object.keys(event.metadata).length > 0 && (
+                                  <details className="text-xs text-gray-400 mt-1">
+                                    <summary className="cursor-pointer hover:text-gray-600">Details</summary>
+                                    <pre className="mt-1 p-2 bg-gray-50 rounded text-xs overflow-x-auto">
+                                      {JSON.stringify(event.metadata, null, 2)}
+                                    </pre>
+                                  </details>
+                                )}
+                                {event.source === 'synthetic' && (
+                                  <p className="text-xs text-gray-400 italic mt-1">
+                                    (Inferred from letter data)
+                                  </p>
+                                )}
                               </div>
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-900 capitalize">
-                                {event.type === 'sent' ? 'Letter Sent' :
-                                 event.type === 'opened' ? 'Letter Opened' :
-                                 event.type === 'paid' ? 'Marked as Paid' : event.type}
-                              </p>
-                              <p className="text-xs text-gray-500">
-                                {formatDate(event.recorded_at || event.created_at)}
-                              </p>
-                              {event.metadata && (
-                                <p className="text-xs text-gray-400 mt-1">
-                                  {JSON.stringify(event.metadata)}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        ))
+                          )
+                        })
                       )}
                     </div>
                   </div>

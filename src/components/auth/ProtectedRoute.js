@@ -3,13 +3,19 @@
 
 import { useAuth } from './AuthProvider'
 import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 export function ProtectedRoute({ children, requireAdmin = false }) {
   const { user, profile, loading } = useAuth()
   const router = useRouter()
+  const [isInitialLoad, setIsInitialLoad] = useState(true)
 
   useEffect(() => {
+    // After first mount, we don't need to show loading anymore
+    if (!loading) {
+      setIsInitialLoad(false)
+    }
+    
     // Don't do anything while loading
     if (loading) return
 
@@ -28,8 +34,8 @@ export function ProtectedRoute({ children, requireAdmin = false }) {
     }
   }, [user, profile, loading, requireAdmin, router])
 
-  // Show loading state
-  if (loading) {
+  // Only show loading state on initial load, not during navigation
+  if (loading && isInitialLoad) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -40,8 +46,8 @@ export function ProtectedRoute({ children, requireAdmin = false }) {
     )
   }
 
-  // Show redirecting state if no user
-  if (!user) {
+  // Show redirecting state if no user (but only on initial load)
+  if (!user && isInitialLoad) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -52,6 +58,6 @@ export function ProtectedRoute({ children, requireAdmin = false }) {
     )
   }
 
-  // Render children if authenticated
+  // Render children if authenticated (or still checking during navigation)
   return children
 }

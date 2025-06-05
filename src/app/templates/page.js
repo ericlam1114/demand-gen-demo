@@ -30,7 +30,7 @@ function TemplatesContent() {
   const currentPlan = agency?.plan || 'free'
   
   const [templates, setTemplates] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false) // Start with false to avoid loading on navigation
   const [selectedTemplate, setSelectedTemplate] = useState(null)
   const [showEditor, setShowEditor] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
@@ -68,6 +68,7 @@ function TemplatesContent() {
   }, [profile?.agency_id])
 
   const fetchTemplates = async () => {
+    setLoading(true)
     try {
       console.log('[Templates] Fetching templates for agency:', profile?.agency_id)
       

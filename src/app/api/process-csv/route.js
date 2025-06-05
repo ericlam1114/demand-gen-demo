@@ -200,8 +200,7 @@ async function processBatch(supabase, batch, agencyId, targetWorkflowId, workflo
         zip: record.zip || null,
         account_number: record.account_number || null,
         original_creditor: record.original_creditor || null,
-        created_at: now,
-        updated_at: now
+        created_at: now
       })
       
       // Prepare letter record
@@ -210,8 +209,7 @@ async function processBatch(supabase, batch, agencyId, targetWorkflowId, workflo
         debtor_id: debtorId,
         status: 'sent',
         sent_at: now,
-        created_at: now,
-        updated_at: now
+        created_at: now
       })
       
       // Prepare workflow enrollment
@@ -222,8 +220,7 @@ async function processBatch(supabase, batch, agencyId, targetWorkflowId, workflo
         status: 'active',
         started_at: now,
         next_action_at: now,
-        created_at: now,
-        updated_at: now
+        created_at: now
       })
       
       // Prepare audit event

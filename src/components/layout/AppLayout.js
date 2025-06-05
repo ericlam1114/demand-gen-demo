@@ -11,30 +11,7 @@ export function AppLayout({ children }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [impersonationContext, setImpersonationContext] = useState(null)
-  const { user, profile, agency, signOut, isAdmin, loading } = useAuth()
-
-  // Don't render anything while authentication is loading
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
-        </div>
-      </div>
-    )
-  }
-
-  // Don't render if no user or profile - should redirect via AuthProvider
-  if (!user || !profile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-gray-600">Redirecting...</p>
-        </div>
-      </div>
-    )
-  }
+  const { user, profile, agency, signOut, isAdmin } = useAuth()
 
   useEffect(() => {
     // Check for impersonation context
