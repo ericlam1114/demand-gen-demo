@@ -15,6 +15,14 @@ export function ProtectedRoute({ children, requireAdmin = false }) {
         return
       }
       
+      // Additional security check: if user exists but no profile, they'll be handled by AuthProvider
+      // This is a backup check in case the AuthProvider didn't catch it
+      if (user && !profile) {
+        console.log('[ProtectedRoute] User exists but no profile - redirecting to login')
+        router.push('/login')
+        return
+      }
+      
       if (requireAdmin && profile?.role !== 'admin') {
         router.push('/dashboard')
         return
@@ -25,17 +33,42 @@ export function ProtectedRoute({ children, requireAdmin = false }) {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
       </div>
     )
   }
 
   if (!user) {
-    return null
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-600">Redirecting to login...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!profile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-600">Account setup required. Redirecting...</p>
+        </div>
+      </div>
+    )
   }
 
   if (requireAdmin && profile?.role !== 'admin') {
-    return null
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-600">Admin access required. Redirecting...</p>
+        </div>
+      </div>
+    )
   }
 
   return children

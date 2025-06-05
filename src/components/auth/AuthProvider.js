@@ -26,6 +26,18 @@ export function AuthProvider({ children }) {
     console.log(`[AuthProvider] ${message}`, data)
   }
 
+  // Clear any potentially cached demo data on mount
+  useEffect(() => {
+    // Clear any localStorage or sessionStorage that might contain demo data
+    if (typeof window !== 'undefined') {
+      // Remove any potential demo data from storage
+      localStorage.removeItem('demo-profile')
+      localStorage.removeItem('demo-agency')
+      sessionStorage.removeItem('demo-profile')
+      sessionStorage.removeItem('demo-agency')
+    }
+  }, [])
+
   useEffect(() => {
     debugLog('AuthProvider useEffect starting')
     
@@ -68,6 +80,7 @@ export function AuthProvider({ children }) {
           await loadUserProfile(session.user.id)
         } else if (event === 'SIGNED_OUT') {
           debugLog('Sign out detected')
+          // Immediately clear all state - no demo data should ever appear
           setUser(null)
           setProfile(null)
           setAgency(null)
@@ -123,35 +136,21 @@ export function AuthProvider({ children }) {
         profileError = result.error
         debugLog('Profile query completed:', { hasData: !!profileData, error: profileError })
       } catch (timeoutError) {
-        debugLog('Profile loading timed out, using fallback')
+        debugLog('Profile loading timed out')
         profileError = { code: 'TIMEOUT' }
       }
 
       if (profileError || !profileData) {
-        debugLog('Profile error or not found, creating fallback profile...')
+        debugLog('Profile error or not found - user not authorized:', profileError)
         
-        // Create a fallback profile immediately
-        const fallbackProfile = {
-          id: userId,
-          email: user?.email || 'demo@example.com',
-          full_name: user?.user_metadata?.full_name || user?.email || 'Demo User',
-          role: 'user',
-          agency_id: null,
-          agencies: {
-            id: 'demo-agency',
-            name: 'Demo Agency',
-            slug: 'demo',
-            plan: 'free',
-            max_users: 1,
-            max_letters_per_month: 50,
-            logo_url: null
-          }
-        }
-        
-        debugLog('Using fallback profile:', fallbackProfile)
-        setProfile(fallbackProfile)
-        setAgency(fallbackProfile.agencies)
+        // Security: Users without proper profiles should not get access
+        // Sign them out and redirect to login
+        await supabase.auth.signOut()
+        setUser(null)
+        setProfile(null)
+        setAgency(null)
         setLoading(false)
+        router.push('/login')
         return
       }
 
@@ -163,28 +162,13 @@ export function AuthProvider({ children }) {
     } catch (error) {
       debugLog('Unexpected error in loadUserProfile:', error)
       
-      // Always create a fallback profile on any error
-      const fallbackProfile = {
-        id: userId,
-        email: 'demo@example.com',
-        full_name: 'Demo User',
-        role: 'user',
-        agency_id: null,
-        agencies: {
-          id: 'demo-agency',
-          name: 'Demo Agency',
-          slug: 'demo',
-          plan: 'free',
-          max_users: 1,
-          max_letters_per_month: 50,
-          logo_url: null
-        }
-      }
-      
-      debugLog('Using error fallback profile')
-      setProfile(fallbackProfile)
-      setAgency(fallbackProfile.agencies)
+      // Security: On any error, sign out the user instead of giving demo access
+      await supabase.auth.signOut()
+      setUser(null)
+      setProfile(null)
+      setAgency(null)
       setLoading(false)
+      router.push('/login')
     }
   }
 
@@ -220,8 +204,25 @@ export function AuthProvider({ children }) {
 
   const signOut = async () => {
     debugLog('signOut called')
+    
+    // Clear all state immediately
+    setUser(null)
+    setProfile(null)
+    setAgency(null)
+    setLoading(false)
+    
+    // Clear any browser storage
+    if (typeof window !== 'undefined') {
+      localStorage.clear()
+      sessionStorage.clear()
+    }
+    
     const { error } = await supabase.auth.signOut()
     debugLog('SignOut result:', { error })
+    
+    // Force redirect to login
+    router.push('/login')
+    
     return { error }
   }
 
