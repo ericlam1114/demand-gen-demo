@@ -6,6 +6,7 @@ import { Sidebar } from './sidebar'
 import { Button } from '@/components/ui/button'
 import { Menu, Bell, User, Settings, LogOut, Building2, Users, Eye, Crown } from 'lucide-react'
 import Link from 'next/link'
+import toast from 'react-hot-toast'
 
 export function AppLayout({ children }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -30,7 +31,37 @@ export function AppLayout({ children }) {
   }
 
   const handleSignOut = async () => {
-    await signOut()
+    try {
+      console.log('[AppLayout] Sign out clicked')
+      setShowUserMenu(false) // Close the menu immediately
+      
+      // Show loading toast
+      const toastId = toast.loading('Signing out...')
+      
+      const { error } = await signOut()
+      
+      if (error) {
+        console.error('[AppLayout] Sign out error:', error)
+        toast.error('Sign out failed', { id: toastId })
+        // Try redirect anyway
+        setTimeout(() => {
+          window.location.href = '/login'
+        }, 1000)
+      } else {
+        toast.success('Signed out successfully', { id: toastId })
+        // Redirect after brief delay to show toast
+        setTimeout(() => {
+          window.location.href = '/login'
+        }, 500)
+      }
+    } catch (err) {
+      console.error('[AppLayout] Sign out exception:', err)
+      toast.error('Sign out failed')
+      // Force redirect even on error
+      setTimeout(() => {
+        window.location.href = '/login'
+      }, 1000)
+    }
   }
 
   // Show impersonated agency name if applicable
@@ -147,8 +178,12 @@ export function AppLayout({ children }) {
                       Settings
                     </Link>
                     <button
-                      onClick={handleSignOut}
-                      className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        handleSignOut()
+                      }}
+                      className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left"
                     >
                       <LogOut className="w-4 h-4 mr-3" />
                       Sign Out
