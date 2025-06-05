@@ -20,18 +20,18 @@ export function ProtectedRoute({ children, requireAdmin = false }) {
     if (loading) return
 
     // Check authentication
-    if (!user) {
+      if (!user) {
       console.log('[ProtectedRoute] No user, redirecting to login')
-      router.push('/login')
-      return
-    }
-
+        router.push('/login')
+        return
+      }
+      
     // Check admin requirement
-    if (requireAdmin && profile?.role !== 'admin') {
+      if (requireAdmin && profile?.role !== 'admin') {
       console.log('[ProtectedRoute] Admin required but user is not admin')
-      router.push('/dashboard')
-      return
-    }
+        router.push('/dashboard')
+        return
+      }
   }, [user, profile, loading, requireAdmin, router])
 
   // Only show loading state on initial load, not during navigation
@@ -60,4 +60,4 @@ export function ProtectedRoute({ children, requireAdmin = false }) {
 
   // Render children if authenticated (or still checking during navigation)
   return children
-}
+} 

@@ -72,12 +72,12 @@ function SettingsContent() {
         // Handle both array result and potential empty array
         const settingsData = Array.isArray(data) ? data[0] : data
         if (settingsData) {
-          // Ensure all values are strings, not null
+        // Ensure all values are strings, not null
           const cleanedData = Object.keys(settingsData).reduce((acc, key) => {
             acc[key] = settingsData[key] ?? ''
-            return acc
-          }, {})
-          setSettings(cleanedData)
+          return acc
+        }, {})
+        setSettings(cleanedData)
         } else {
           console.log('[Settings] No settings found for agency - will create on save')
           // Keep default empty settings

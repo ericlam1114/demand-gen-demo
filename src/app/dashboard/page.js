@@ -89,11 +89,11 @@ function DashboardContent() {
       if (error) {
         console.error('[Dashboard] Supabase error:', error)
         // Don't throw, just use empty data
-        setLetters([])
-        calculateMetrics([])
+          setLetters([])
+          calculateMetrics([])
       } else {
-        setLetters(data || [])
-        calculateMetrics(data || [])
+      setLetters(data || [])
+      calculateMetrics(data || [])
       }
     } catch (error) {
       console.error('[Dashboard] Error fetching letters:', error)
@@ -539,7 +539,7 @@ function DashboardContent() {
         }),
       })
       
-      const result = await response.json()
+        const result = await response.json()
       
       if (response.ok) {
         toast.success(result.message || `Successfully processed ${result.processed} records`, {
@@ -555,7 +555,7 @@ function DashboardContent() {
         
         // Simple refresh after a short delay to allow backend processing
         setTimeout(() => {
-          fetchLetters()
+        fetchLetters()
         }, 1000)
       } else {
         toast.error(result.error || 'Failed to process CSV')
@@ -565,7 +565,7 @@ function DashboardContent() {
       toast.error('Network error occurred')
     } finally {
       if (!isUploading) {
-        setIsUploading(false)
+      setIsUploading(false)
       }
     }
   }
@@ -613,9 +613,9 @@ function DashboardContent() {
       const [eventsResult, workflowResult, executionsResult] = await Promise.all([
         // 1. Fetch events for this letter
         supabase
-          .from('events')
-          .select('*')
-          .eq('letter_id', letter.id)
+        .from('events')
+        .select('*')
+        .eq('letter_id', letter.id)
           .order('recorded_at', { ascending: false }),
         
         // 2. Fetch current workflow enrollment
@@ -1422,13 +1422,13 @@ function DashboardContent() {
                           }
                           
                           return (
-                            <div key={event.id} className="flex items-start space-x-3">
-                              <div className="flex-shrink-0">
+                          <div key={event.id} className="flex items-start space-x-3">
+                            <div className="flex-shrink-0">
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center ${getEventColor()}`}>
                                   {getEventIcon()}
-                                </div>
                               </div>
-                              <div className="flex-1 min-w-0">
+                            </div>
+                            <div className="flex-1 min-w-0">
                                 <div className="flex items-center justify-between">
                                   <p className="text-sm font-medium text-gray-900">
                                     {getEventTitle()}
@@ -1439,9 +1439,9 @@ function DashboardContent() {
                                     </span>
                                   )}
                                 </div>
-                                <p className="text-xs text-gray-500">
+                              <p className="text-xs text-gray-500">
                                   {formatDate(event.recorded_at || event.created_at)}
-                                </p>
+                              </p>
                                 {event.status && event.status !== 'completed' && (
                                   <p className={`text-xs mt-1 font-medium ${
                                     event.status === 'failed' ? 'text-red-600' :
@@ -1462,10 +1462,10 @@ function DashboardContent() {
                                 {event.source === 'synthetic' && (
                                   <p className="text-xs text-gray-400 italic mt-1">
                                     (Inferred from letter data)
-                                  </p>
-                                )}
-                              </div>
+                                </p>
+                              )}
                             </div>
+                          </div>
                           )
                         })
                       )}

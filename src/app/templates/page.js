@@ -62,7 +62,7 @@ function TemplatesContent() {
 
   useEffect(() => {
     if (agency?.id) {
-      fetchTemplates()
+    fetchTemplates()
     } else if (!authLoading) {
       // Auth is done loading but no agency
       setLoading(false)
@@ -463,10 +463,10 @@ function TemplatesContent() {
                       </label>
                       {editorData.channel === 'sms' ? (
                         <div className="relative">
-                          <textarea
-                            value={editorData.sms_content}
-                            onChange={(e) => setEditorData(prev => ({ ...prev, sms_content: e.target.value }))}
-                            rows={4}
+                        <textarea
+                          value={editorData.sms_content}
+                          onChange={(e) => setEditorData(prev => ({ ...prev, sms_content: e.target.value }))}
+                          rows={4}
                             className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 ${
                               !smsEnabled ? 'opacity-50 cursor-not-allowed' : ''
                             }`}

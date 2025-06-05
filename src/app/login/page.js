@@ -30,8 +30,8 @@ export default function LoginPage() {
 
     try {
       const { error } = await signIn(email, password);
-
-      if (error) {
+    
+    if (error) {
         console.log("[Login] Sign in failed:", error.message);
         setError(error.message);
         setLoading(false);
@@ -147,17 +147,17 @@ export default function LoginPage() {
 
         {/* Additional Links */}
         <div className="mt-6 text-center space-y-2">
-          <Link
-            href="/forgot-password"
+          <Link 
+            href="/forgot-password" 
             className="text-sm text-blue-600 hover:text-blue-800"
           >
             Forgot your password?
           </Link>
-
+          
           <div className="text-sm text-gray-600">
             Need an account?{" "}
-            <Link
-              href="/signup"
+            <Link 
+              href="/signup" 
               className="text-blue-600 hover:text-blue-800 font-medium"
             >
               Contact sales
@@ -191,4 +191,4 @@ export default function LoginPage() {
       </div>
     </div>
   );
-}
+} 

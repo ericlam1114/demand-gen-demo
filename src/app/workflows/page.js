@@ -414,21 +414,21 @@ function WorkflowsContent() {
         // For non-enterprise plans, remove default from all others first
         if (currentPlan !== 'enterprise') {
           const { error: clearError } = await supabase
-            .from('workflows')
-            .update({ is_default: false })
+        .from('workflows')
+        .update({ is_default: false })
             .neq('id', workflowId)
 
           if (clearError) throw clearError
         }
 
         // Set this one as default
-        const { error } = await supabase
-          .from('workflows')
-          .update({ is_default: true })
-          .eq('id', workflowId)
+      const { error } = await supabase
+        .from('workflows')
+        .update({ is_default: true })
+        .eq('id', workflowId)
 
-        if (error) throw error
-        toast.success('Default workflow updated')
+      if (error) throw error
+      toast.success('Default workflow updated')
       }
 
       fetchWorkflows()
@@ -562,8 +562,8 @@ function WorkflowsContent() {
                       disabled={!canCreateMore}
                       className={!canCreateMore ? 'opacity-50 cursor-not-allowed' : ''}
                     >
-                      <Plus className="w-4 h-4" />
-                    </Button>
+                    <Plus className="w-4 h-4" />
+                  </Button>
                   ) : (
                     <Button size="sm" disabled className="opacity-50 cursor-not-allowed">
                       <Crown className="w-4 h-4" />
@@ -598,7 +598,7 @@ function WorkflowsContent() {
                         onClick={(e) => {
                           e.stopPropagation()
                           if (workflowsEnabled) {
-                            toggleDefault(workflow.id)
+                          toggleDefault(workflow.id)
                           }
                         }}
                         className={`ml-2 p-1 rounded ${
@@ -792,7 +792,7 @@ function WorkflowsContent() {
                                       disabled={!isAllowed}
                                     >
                                       {stepType.name} {!isAllowed ? '(Upgrade Required)' : ''}
-                                    </option>
+                                  </option>
                                   )
                                 })}
                               </select>
@@ -827,10 +827,10 @@ function WorkflowsContent() {
                                   {templates
                                     .filter(template => template.channel === step.step_type)
                                     .map(template => (
-                                      <option key={template.id} value={template.id}>
-                                        {template.name}
-                                      </option>
-                                    ))}
+                                    <option key={template.id} value={template.id}>
+                                      {template.name}
+                                    </option>
+                                  ))}
                                 </select>
                                 {templates.filter(template => template.channel === step.step_type).length === 0 && (
                                   <p className="text-xs text-amber-600 mt-1">

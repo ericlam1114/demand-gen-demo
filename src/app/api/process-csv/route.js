@@ -48,12 +48,12 @@ export async function POST(request) {
         .eq('is_default', true)
         .eq('is_active', true)
         .limit(1)
-      
+
       if (workflowError) {
         console.error('[CSV Processing] Error finding default workflow:', workflowError)
       } else if (defaultWorkflows && defaultWorkflows.length > 0) {
         const defaultWorkflow = defaultWorkflows[0]
-        targetWorkflowId = defaultWorkflow.id
+      targetWorkflowId = defaultWorkflow.id
         console.log('[CSV Processing] Using default workflow:', defaultWorkflow.name, defaultWorkflow.id)
       }
     }
@@ -84,7 +84,7 @@ export async function POST(request) {
       .eq('workflow_id', targetWorkflowId)
       .order('step_number', { ascending: true })
       .limit(1)
-      .single()
+          .single()
 
     if (stepError || !firstStep) {
       return NextResponse.json({ 
@@ -179,9 +179,9 @@ async function processBatch(supabase, batch, agencyId, targetWorkflowId, workflo
       const balanceCents = Math.round(parseFloat(record.balance) * 100)
       if (isNaN(balanceCents)) {
         results.errors.push(`Record ${index + 1} (${record.name}): Invalid balance amount`)
-        continue
-      }
-      
+          continue
+        }
+
       // Generate UUIDs for relationships
       const debtorId = crypto.randomUUID()
       const letterId = crypto.randomUUID()
@@ -215,9 +215,9 @@ async function processBatch(supabase, batch, agencyId, targetWorkflowId, workflo
       // Prepare workflow enrollment
       workflows.push({
         debtor_id: debtorId,
-        workflow_id: targetWorkflowId,
-        current_step_number: 1,
-        status: 'active',
+            workflow_id: targetWorkflowId,
+            current_step_number: 1,
+            status: 'active',
         started_at: now,
         next_action_at: now,
         created_at: now
@@ -285,10 +285,10 @@ async function processBatch(supabase, batch, agencyId, targetWorkflowId, workflo
   } catch (error) {
     console.error('[CSV Processing] Bulk insert failed:', error)
     results.errors.push(`Bulk insert failed: ${error.message}`)
-  }
+      }
   
   return results
-}
+    }
 
 // Trigger workflow execution in background (non-blocking)
 async function triggerWorkflowExecution(agencyId, workflowId) {
@@ -302,7 +302,7 @@ async function triggerWorkflowExecution(agencyId, workflowId) {
         immediate: true
       })
     })
-    
+
     if (!response.ok) {
       console.warn('[CSV Processing] Failed to trigger workflow execution:', await response.text())
     } else {

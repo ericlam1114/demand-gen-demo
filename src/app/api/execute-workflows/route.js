@@ -173,26 +173,26 @@ async function skipStep(supabase, workflow, step, now) {
 // Execute email step
 async function executeEmailStep(supabase, workflow, step, companySettings, now) {
   const templateData = getTemplateData(workflow, companySettings, step)
-  
-  // Compile and render template
-  const subjectTemplate = Handlebars.compile(step.templates.email_subject || 'Demand for Payment - {{debtor_name}}')
-  const bodyTemplate = Handlebars.compile(step.templates.html_content)
-  
-  const subject = subjectTemplate(templateData)
-  const htmlContent = bodyTemplate(templateData)
-  
+
+          // Compile and render template
+          const subjectTemplate = Handlebars.compile(step.templates.email_subject || 'Demand for Payment - {{debtor_name}}')
+          const bodyTemplate = Handlebars.compile(step.templates.html_content)
+          
+          const subject = subjectTemplate(templateData)
+          const htmlContent = bodyTemplate(templateData)
+          
   // Generate unique reference for SendGrid tracking correlation
-  const trackingId = uuidv4()
+          const trackingId = uuidv4()
 
   // Prepare email with SendGrid native tracking
-  const msg = {
-    to: workflow.debtors.email,
-    from: {
-      email: companySettings?.from_email || process.env.FROM_EMAIL || 'collections@example.com',
-      name: companySettings?.from_name || companySettings?.company_name || 'Collections Agency'
-    },
-    replyTo: companySettings?.reply_to_email || companySettings?.company_email,
-    subject: subject,
+          const msg = {
+            to: workflow.debtors.email,
+            from: {
+              email: companySettings?.from_email || process.env.FROM_EMAIL || 'collections@example.com',
+              name: companySettings?.from_name || companySettings?.company_name || 'Collections Agency'
+            },
+            replyTo: companySettings?.reply_to_email || companySettings?.company_email,
+            subject: subject,
     html: htmlContent, // Use clean HTML without custom tracking pixel
     // Custom args for correlation with SendGrid webhooks
     customArgs: {
@@ -202,12 +202,12 @@ async function executeEmailStep(supabase, workflow, step, companySettings, now) 
       step_number: workflow.current_step_number.toString()
     },
     // Enhanced SendGrid tracking settings
-    trackingSettings: {
-      clickTracking: { 
+            trackingSettings: {
+              clickTracking: {
         enable: true,
         enableText: true // Track clicks in plain text emails too
-      },
-      openTracking: { 
+              },
+              openTracking: {
         enable: true,
         substitutionTag: '%open_track%' // Optional: custom substitution tag
       },
@@ -219,44 +219,44 @@ async function executeEmailStep(supabase, workflow, step, companySettings, now) 
         utmSource: 'demand-letters',
         utmMedium: 'email',
         utmCampaign: 'collections-workflow'
-      }
+              }
     },
     // Categories for SendGrid analytics
     categories: ['demand-letter', 'workflow', `step-${workflow.current_step_number}`]
-  }
+          }
 
-  // Send email
-  await sgMail.send(msg)
-  console.log(`Email sent to ${workflow.debtors.email} for step ${workflow.current_step_number}`)
+          // Send email
+          await sgMail.send(msg)
+          console.log(`Email sent to ${workflow.debtors.email} for step ${workflow.current_step_number}`)
 
   // Record the letter with SendGrid tracking reference
   const { data: letter } = await supabase
-    .from('letters')
-    .insert({
-      debtor_id: workflow.debtor_id,
-      template_id: step.templates.id,
+            .from('letters')
+            .insert({
+              debtor_id: workflow.debtor_id,
+              template_id: step.templates.id,
       channel: 'email',
-      status: 'sent',
-      sent_at: now.toISOString(),
+              status: 'sent',
+              sent_at: now.toISOString(),
       tracking_id: trackingId, // This will correlate with SendGrid webhook events
       sendgrid_message_id: null, // Will be updated via webhook
       email_events: [] // Array to store SendGrid events
-    })
-    .select()
-    .single()
+            })
+            .select()
+            .single()
 
-  // Record the execution
-  await supabase
-    .from('workflow_executions')
-    .insert({
-      debtor_workflow_id: workflow.id,
-      step_id: step.id,
-      execution_type: 'email',
-      executed_at: now.toISOString(),
-      status: 'completed',
-      letter_id: letter?.id
-    })
-}
+          // Record the execution
+          await supabase
+            .from('workflow_executions')
+            .insert({
+              debtor_workflow_id: workflow.id,
+              step_id: step.id,
+              execution_type: 'email',
+              executed_at: now.toISOString(),
+              status: 'completed',
+              letter_id: letter?.id
+            })
+        }
 
 // Execute SMS step
 async function executeSmsStep(supabase, workflow, step, companySettings, now) {
@@ -339,38 +339,38 @@ async function executePhysicalStep(supabase, workflow, step, companySettings, no
 
 // Schedule next step in workflow
 async function scheduleNextStep(supabase, workflow, now) {
-  const { data: nextStep } = await supabase
-    .from('workflow_steps')
-    .select('step_number, delay_days, delay_hours')
-    .eq('workflow_id', workflow.workflow_id)
-    .gt('step_number', workflow.current_step_number)
-    .order('step_number', { ascending: true })
-    .limit(1)
-    .single()
+        const { data: nextStep } = await supabase
+          .from('workflow_steps')
+          .select('step_number, delay_days, delay_hours')
+          .eq('workflow_id', workflow.workflow_id)
+          .gt('step_number', workflow.current_step_number)
+          .order('step_number', { ascending: true })
+          .limit(1)
+          .single()
 
-  if (nextStep) {
-    // Schedule next step
-    const nextActionTime = new Date(now)
-    nextActionTime.setDate(nextActionTime.getDate() + (nextStep.delay_days || 0))
-    nextActionTime.setHours(nextActionTime.getHours() + (nextStep.delay_hours || 0))
+        if (nextStep) {
+          // Schedule next step
+          const nextActionTime = new Date(now)
+          nextActionTime.setDate(nextActionTime.getDate() + (nextStep.delay_days || 0))
+          nextActionTime.setHours(nextActionTime.getHours() + (nextStep.delay_hours || 0))
 
-    await supabase
-      .from('debtor_workflows')
-      .update({
-        current_step_number: nextStep.step_number,
-        next_action_at: nextActionTime.toISOString()
-      })
-      .eq('id', workflow.id)
-  } else {
-    // Workflow completed
-    await supabase
-      .from('debtor_workflows')
-      .update({
-        status: 'completed',
-        completed_at: now.toISOString()
-      })
-      .eq('id', workflow.id)
-  }
+          await supabase
+            .from('debtor_workflows')
+            .update({
+              current_step_number: nextStep.step_number,
+              next_action_at: nextActionTime.toISOString()
+            })
+            .eq('id', workflow.id)
+        } else {
+          // Workflow completed
+          await supabase
+            .from('debtor_workflows')
+            .update({
+              status: 'completed',
+              completed_at: now.toISOString()
+            })
+            .eq('id', workflow.id)
+        }
 }
 
 // Get template data for rendering
