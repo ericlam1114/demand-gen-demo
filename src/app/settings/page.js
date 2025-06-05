@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
+import { AppLayout } from '@/components/layout/AppLayout'
 import { 
   Building2, 
   Mail, 
@@ -17,7 +19,7 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
-export default function SettingsPage() {
+function SettingsContent() {
   const [settings, setSettings] = useState({
     company_name: '',
     company_address: '',
@@ -390,5 +392,15 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function SettingsPage() {
+  return (
+    <ProtectedRoute>
+      <AppLayout>
+        <SettingsContent />
+      </AppLayout>
+    </ProtectedRoute>
   )
 } 

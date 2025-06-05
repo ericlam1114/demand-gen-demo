@@ -102,18 +102,18 @@ function DashboardContent() {
   useEffect(() => {
     // Filter letters based on search term and status
     let filtered = letters
-    
+
     if (searchTerm) {
-      filtered = filtered.filter(letter => 
+      filtered = filtered.filter(letter =>
         letter.debtors?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         letter.debtors?.email?.toLowerCase().includes(searchTerm.toLowerCase())
       )
     }
-    
+
     if (statusFilter !== 'all') {
       filtered = filtered.filter(letter => letter.status === statusFilter)
     }
-    
+
     setFilteredLetters(filtered)
   }, [letters, searchTerm, statusFilter])
 
@@ -159,7 +159,7 @@ function DashboardContent() {
         .eq('id', letterId)
 
       if (error) throw error
-      
+
       toast.success('Letter marked as paid')
       fetchLetters()
     } catch (error) {
@@ -243,7 +243,7 @@ function DashboardContent() {
         },
         body: JSON.stringify({ data: validData }),
       })
-
+      
       if (response.ok) {
         const result = await response.json()
         toast.success(`${result.processed} letters processed successfully!`)

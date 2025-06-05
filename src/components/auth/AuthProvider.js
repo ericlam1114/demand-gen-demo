@@ -53,6 +53,8 @@ export function AuthProvider({ children }) {
 
   const loadUserProfile = async (userId) => {
     try {
+      console.log('Loading user profile for userId:', userId)
+      
       // Get user profile with agency info
       const { data: profileData, error: profileError } = await supabase
         .from('user_profiles')
@@ -71,36 +73,92 @@ export function AuthProvider({ children }) {
         .eq('id', userId)
         .single()
 
+      console.log('Profile query result:', { profileData, profileError })
+
       if (profileError) {
         console.error('Error loading profile:', profileError)
+        
+        // If profile doesn't exist, try to create one automatically
         if (profileError.code === 'PGRST116') {
-          // Profile doesn't exist, user needs to complete onboarding
-          router.push('/onboarding')
+          console.log('Profile not found, attempting to create one...')
+          
+          // Try to get user info from auth
+          const { data: { user }, error: userError } = await supabase.auth.getUser()
+          
+          if (user && !userError) {
+            // Create a basic profile
+            const { data: newProfile, error: createError } = await supabase
+              .from('user_profiles')
+              .insert({
+                id: userId,
+                email: user.email,
+                full_name: user.user_metadata?.full_name || user.email,
+                role: 'user',
+                agency_id: null
+              })
+              .select()
+              .single()
+              
+            if (createError) {
+              console.error('Failed to create profile:', createError)
+              // Redirect to onboarding if we can't auto-create
+              router.push('/onboarding')
+              return
+            }
+            
+            console.log('Created new profile:', newProfile)
+            setProfile(newProfile)
+            setAgency(null)
+            
+            // Redirect to onboarding to complete setup
+            router.push('/onboarding')
+            return
+          } else {
+            console.error('Could not get user info for profile creation:', userError)
+            router.push('/onboarding')
+            return
+          }
         }
+        
+        // For other errors, log them but don't crash
+        console.error('Profile loading error that will be ignored:', profileError)
+        setProfile(null)
+        setAgency(null)
         return
       }
 
+      console.log('Successfully loaded profile:', profileData)
       setProfile(profileData)
       setAgency(profileData.agencies)
 
-      // Update last login
-      await supabase
+      // Update last login (don't await this, let it happen in background)
+      supabase
         .from('user_profiles')
         .update({ last_login_at: new Date().toISOString() })
         .eq('id', userId)
+        .then(({ error }) => {
+          if (error) console.log('Failed to update last login:', error)
+        })
 
       // Redirect based on role after successful profile load
       const currentPath = window.location.pathname
+      console.log('Current path:', currentPath, 'User role:', profileData.role)
+      
       if (currentPath === '/login' || currentPath === '/') {
         if (profileData.role === 'admin') {
+          console.log('Redirecting admin to /admin')
           router.push('/admin')
         } else {
+          console.log('Redirecting user to /dashboard')
           router.push('/dashboard')
         }
       }
 
     } catch (error) {
-      console.error('Error in loadUserProfile:', error)
+      console.error('Unexpected error in loadUserProfile:', error)
+      // Don't crash the app, just log the error and continue
+      setProfile(null)
+      setAgency(null)
     } finally {
       setLoading(false)
     }

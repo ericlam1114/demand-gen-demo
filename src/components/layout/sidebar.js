@@ -2,15 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Workflow, BarChart3, Settings, FileText, Upload, Building2 } from "lucide-react";
+import { Workflow, BarChart3, Settings, FileText, Database, Building2, Home, ArrowRight, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/auth/AuthProvider";
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: BarChart3 },
-  { name: "Upload Data", href: "/upload", icon: Upload },
-  { name: "Workflows", href: "/workflows", icon: Workflow },
   { name: "Templates", href: "/templates", icon: FileText },
+  { name: "Workflows", href: "/workflows", icon: Workflow },
+  { name: "Integrations", href: "/upload", icon: Database },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
@@ -78,12 +78,12 @@ export function Sidebar({ collapsed = false }) {
 
         {/* Agency Info */}
         {!collapsed && agency && (
-          <div className="px-4 py-4 border-t border-gray-200">
+        <div className="px-4 py-4 border-t border-gray-200">
             <div className="bg-gray-50 rounded-lg p-3">
               <div className="text-xs text-gray-500 mb-1">Current Agency</div>
               <div className="text-sm font-medium text-gray-900 truncate">
                 {agency.name}
-              </div>
+            </div>
               <div className="text-xs text-gray-500 mt-1">
                 {agency.max_users} users • {agency.max_letters_per_month?.toLocaleString()} letters/month
               </div>

@@ -35,11 +35,11 @@ WHERE name = 'Premier Recovery Solutions' AND slug IS NULL;
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'agencies_slug_unique') THEN
-        ALTER TABLE agencies ADD CONSTRAINT agencies_slug_unique UNIQUE (slug);
+ALTER TABLE agencies ADD CONSTRAINT agencies_slug_unique UNIQUE (slug);
     END IF;
     
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'agencies_subdomain_unique') THEN
-        ALTER TABLE agencies ADD CONSTRAINT agencies_subdomain_unique UNIQUE (subdomain);
+ALTER TABLE agencies ADD CONSTRAINT agencies_subdomain_unique UNIQUE (subdomain);
     END IF;
 END $$;
 

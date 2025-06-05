@@ -273,7 +273,7 @@ function TemplatesContent() {
                       </span>
                     )}
                   </div>
-                  
+
                   <div className="space-y-2 mb-4">
                     <div className="text-sm">
                       <span className="font-medium text-gray-700">Subject:</span>
@@ -285,16 +285,35 @@ function TemplatesContent() {
                   </div>
 
                   <div className="flex space-x-2">
-                    <Button size="sm" variant="outline" className="flex-1">
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="flex-1"
+                      onClick={() => {
+                        setSelectedTemplate(template)
+                        setPreviewMode(true)
+                        setShowEditor(true)
+                      }}
+                    >
                       <Eye className="w-4 h-4 mr-1" />
                       Preview
                     </Button>
-                    <Button size="sm" variant="outline" className="flex-1">
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="flex-1"
+                      onClick={() => openEditor(template)}
+                    >
                       <Edit3 className="w-4 h-4 mr-1" />
                       Edit
                     </Button>
                     {canDeleteContent() && (
-                      <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700">
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="text-red-600 hover:text-red-700"
+                        onClick={() => openDeleteModal(template)}
+                      >
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     )}
@@ -312,13 +331,224 @@ function TemplatesContent() {
               <p className="text-gray-600 mb-6">
                 Create your first email template to get started with automated demand letters.
               </p>
-              <Button>
+              <Button onClick={() => openEditor()}>
                 <Plus className="w-4 h-4 mr-2" />
                 Create First Template
               </Button>
             </div>
           )}
         </div>
+
+        {/* Template Editor Modal */}
+        {showEditor && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900">
+                    {previewMode ? 'Preview Template' : (isEditing ? 'Edit Template' : 'Create New Template')}
+                  </h2>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowEditor(false)
+                      resetEditor()
+                    }}
+                  >
+                    ✕
+                  </Button>
+                </div>
+
+                {!previewMode ? (
+                  <div className="space-y-6">
+                    {/* Template Basic Info */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Template Name
+                        </label>
+                        <input
+                          type="text"
+                          value={editorData.name}
+                          onChange={(e) => setEditorData(prev => ({ ...prev, name: e.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="Enter template name"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Channel
+                        </label>
+                        <select
+                          value={editorData.channel}
+                          onChange={(e) => setEditorData(prev => ({ ...prev, channel: e.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          {channelOptions.map(option => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Email Subject (for email channel) */}
+                    {editorData.channel === 'email' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Email Subject
+                        </label>
+                        <input
+                          type="text"
+                          value={editorData.email_subject}
+                          onChange={(e) => setEditorData(prev => ({ ...prev, email_subject: e.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="Enter email subject"
+                        />
+                      </div>
+                    )}
+
+                    {/* Content Area */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        {editorData.channel === 'sms' ? 'SMS Content' : 'Content'}
+                      </label>
+                      {editorData.channel === 'sms' ? (
+                        <textarea
+                          value={editorData.sms_content}
+                          onChange={(e) => setEditorData(prev => ({ ...prev, sms_content: e.target.value }))}
+                          rows={4}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="Enter SMS content"
+                        />
+                      ) : (
+                        <textarea
+                          value={editorData.html_content}
+                          onChange={(e) => setEditorData(prev => ({ ...prev, html_content: e.target.value }))}
+                          rows={10}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="Enter your template content here..."
+                        />
+                      )}
+                    </div>
+
+                    {/* Default Template Checkbox */}
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id="is_default"
+                        checked={editorData.is_default}
+                        onChange={(e) => setEditorData(prev => ({ ...prev, is_default: e.target.checked }))}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <label htmlFor="is_default" className="ml-2 block text-sm text-gray-900">
+                        Set as default template for this channel
+                      </label>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex justify-end space-x-3 pt-6 border-t">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setShowEditor(false)
+                          resetEditor()
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button onClick={saveTemplate}>
+                        <Save className="w-4 h-4 mr-2" />
+                        {isEditing ? 'Update Template' : 'Create Template'}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  /* Preview Mode */
+                  <div className="space-y-6">
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <h3 className="font-semibold text-gray-900 mb-2">Template: {selectedTemplate?.name}</h3>
+                      <p className="text-sm text-gray-600">Channel: {getChannelInfo(selectedTemplate?.channel).label}</p>
+                      {selectedTemplate?.channel === 'email' && (
+                        <p className="text-sm text-gray-600">Subject: {selectedTemplate?.email_subject}</p>
+                      )}
+                    </div>
+                    
+                    <div className="border rounded-lg p-4">
+                      <h4 className="font-medium text-gray-900 mb-3">Content Preview:</h4>
+                      <div className="prose max-w-none">
+                        {selectedTemplate?.channel === 'sms' ? (
+                          <div className="bg-blue-50 p-3 rounded-lg">
+                            <p className="text-sm">{selectedTemplate?.sms_content}</p>
+                          </div>
+                        ) : (
+                          <div dangerouslySetInnerHTML={{ __html: selectedTemplate?.html_content }} />
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end space-x-3 pt-6 border-t">
+                      <Button
+                        variant="outline"
+                        onClick={() => setPreviewMode(false)}
+                      >
+                        Edit Template
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setShowEditor(false)
+                          resetEditor()
+                        }}
+                      >
+                        Close
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteModal && templateToDelete && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+              <div className="p-6">
+                <div className="flex items-center mb-4">
+                  <AlertTriangle className="w-6 h-6 text-red-600 mr-3" />
+                  <h3 className="text-lg font-semibold text-gray-900">Delete Template</h3>
+                </div>
+                
+                <p className="text-gray-600 mb-6">
+                  Are you sure you want to delete "{templateToDelete.name}"? This action cannot be undone.
+                </p>
+                
+                <div className="flex justify-end space-x-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowDeleteModal(false)
+                      setTemplateToDelete(null)
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                    onClick={() => handleDelete(templateToDelete.id)}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete Template
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
