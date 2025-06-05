@@ -66,11 +66,24 @@ export async function POST(request) {
       }, { status: 400 })
     }
 
-    // Get the first step of the workflow
-    const firstStep = workflow.steps?.[0]
-    if (!firstStep || !['send_letter', 'email'].includes(firstStep.type)) {
+    // Fetch the first step from workflow_steps table
+    const { data: firstStep, error: stepError } = await supabase
+      .from('workflow_steps')
+      .select('step_number, step_type')
+      .eq('workflow_id', targetWorkflowId)
+      .order('step_number', { ascending: true })
+      .limit(1)
+      .single()
+
+    if (stepError || !firstStep) {
       return NextResponse.json({ 
-        error: 'Workflow must have an email or send_letter step as the first step' 
+        error: 'Workflow has no steps configured' 
+      }, { status: 400 })
+    }
+
+    if (!['send_letter', 'email'].includes(firstStep.step_type)) {
+      return NextResponse.json({ 
+        error: 'Workflow first step must be email or send_letter type' 
       }, { status: 400 })
     }
 
