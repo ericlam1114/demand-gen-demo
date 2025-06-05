@@ -41,77 +41,37 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     debugLog('AuthProvider useEffect starting')
     
-    // Don't set aggressive timeouts on login page
-    const isLoginPage = typeof window !== 'undefined' && window.location.pathname.includes('/login')
-    
-    // Set a timeout only if not on login page
-    let loadingTimeout
-    if (!isLoginPage) {
-      loadingTimeout = setTimeout(() => {
-        debugLog('Auth loading timeout reached, forcing end of loading state')
-        console.log('[AuthProvider] TIMEOUT: Auth loading timeout after 8s, current state:', {
-          hasUser: !!user,
-          hasProfile: !!profile,
-          hasAgency: !!agency,
-          loading,
-          currentPath: typeof window !== 'undefined' ? window.location.pathname : 'unknown'
-        })
-        setLoading(false)
-        // Only redirect if we're not already on the login page
-        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-          debugLog('Redirecting to login due to timeout')
-          router.push('/login')
-        }
-      }, 8000) // Reduced from 15s to 8s for better responsiveness
-    }
+    // Simple loading timeout - much shorter and simpler
+    const loadingTimeout = setTimeout(() => {
+      debugLog('Auth loading timeout - setting loading to false')
+      setLoading(false)
+    }, 5000) // Just 5 seconds, no complex logic
 
-    // Get initial session with better error handling
+    // Get initial session
     debugLog('Getting initial session...')
-    console.log('[AuthProvider] Starting session check...')
-    
     supabase.auth.getSession().then(({ data: { session }, error }) => {
       debugLog('Initial session result:', { hasSession: !!session, error })
-      console.log('[AuthProvider] Session check result:', { 
-        hasSession: !!session, 
-        userId: session?.user?.id,
-        error: error?.message || 'none',
-        currentPath: typeof window !== 'undefined' ? window.location.pathname : 'unknown'
-      })
       
       if (error) {
-        debugLog('Session error, clearing state:', error)
-        console.log('[AuthProvider] Session error, clearing state:', error.message)
-        if (loadingTimeout) clearTimeout(loadingTimeout)
+        debugLog('Session error:', error)
+        clearTimeout(loadingTimeout)
         setLoading(false)
         setUser(null)
         setProfile(null)
         setAgency(null)
-        return // Don't redirect on login page
+        return
       }
       
       if (session?.user) {
         debugLog('Setting user from session:', session.user.id)
-        console.log('[AuthProvider] Valid session found, loading profile for user:', session.user.id)
         setUser(session.user)
-        loadUserProfile(session.user.id).catch(err => {
-          debugLog('Error loading profile:', err)
-          console.log('[AuthProvider] Profile loading failed:', err.message)
-          if (loadingTimeout) clearTimeout(loadingTimeout)
+        loadUserProfile(session.user.id).finally(() => {
+          clearTimeout(loadingTimeout)
           setLoading(false)
-          setUser(null)
-          setProfile(null)
-          setAgency(null)
-          // Only redirect if not on login page
-          if (!isLoginPage) {
-            router.push('/login')
-          }
-        }).finally(() => {
-          if (loadingTimeout) clearTimeout(loadingTimeout)
         })
       } else {
-        debugLog('No session, setting loading false')
-        console.log('[AuthProvider] No session found, clearing state')
-        if (loadingTimeout) clearTimeout(loadingTimeout)
+        debugLog('No session found')
+        clearTimeout(loadingTimeout)
         setLoading(false)
         setUser(null)
         setProfile(null)
@@ -119,99 +79,48 @@ export function AuthProvider({ children }) {
       }
     }).catch((error) => {
       debugLog('Error getting session:', error)
-      console.log('[AuthProvider] Exception during session check:', error.message)
-      if (loadingTimeout) clearTimeout(loadingTimeout)
+      clearTimeout(loadingTimeout)
       setLoading(false)
       setUser(null)
       setProfile(null)
       setAgency(null)
     })
 
-    // Listen for auth changes with improved handling
-    debugLog('Setting up auth state change listener')
+    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         debugLog('Auth state change:', { event, sessionExists: !!session })
-        console.log('[AuthProvider] Auth state change event:', {
-          event,
-          hasSession: !!session,
-          userId: session?.user?.id,
-          currentPath: typeof window !== 'undefined' ? window.location.pathname : 'unknown'
-        })
-        if (loadingTimeout) clearTimeout(loadingTimeout)
         
         if (event === 'SIGNED_IN' && session?.user) {
-          debugLog('Sign in detected, loading profile for:', session.user.id)
-          console.log('[AuthProvider] SIGNED_IN event, loading profile')
           setUser(session.user)
-          try {
-            await loadUserProfile(session.user.id)
-          } catch (err) {
-            debugLog('Error loading profile after sign in:', err)
-            console.log('[AuthProvider] Profile loading failed after sign in:', err.message)
-            setUser(null)
-            setProfile(null)
-            setAgency(null)
-            setLoading(false)
-            // Don't redirect on login page
-            if (!isLoginPage) {
-              router.push('/login')
-            }
-          }
+          await loadUserProfile(session.user.id)
+          setLoading(false)
         } else if (event === 'SIGNED_OUT') {
-          debugLog('Sign out detected, clearing state')
-          console.log('[AuthProvider] SIGNED_OUT event, clearing state')
           setUser(null)
           setProfile(null)
           setAgency(null)
           setLoading(false)
-          // Only redirect to login if not already there
-          if (!isLoginPage) {
-            router.push('/login')
+        } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+          setUser(session.user)
+          if (!profile) {
+            await loadUserProfile(session.user.id)
           }
-        } else if (event === 'TOKEN_REFRESHED' && session) {
-          debugLog('Token refreshed successfully')
-          console.log('[AuthProvider] TOKEN_REFRESHED successfully')
-          if (session.user && !user) {
-            setUser(session.user)
-            try {
-              await loadUserProfile(session.user.id)
-            } catch (err) {
-              debugLog('Error loading profile after token refresh:', err)
-              console.log('[AuthProvider] Profile loading failed after token refresh:', err.message)
-              setUser(null)
-              setProfile(null)
-              setAgency(null)
-              setLoading(false)
-            }
-          }
+          setLoading(false)
         }
-        setLoading(false)
       }
     )
 
     return () => {
-      debugLog('Cleaning up auth provider')
-      if (loadingTimeout) clearTimeout(loadingTimeout)
+      clearTimeout(loadingTimeout)
       subscription.unsubscribe()
     }
   }, [router])
 
   const loadUserProfile = async (userId) => {
     debugLog('loadUserProfile called for:', userId)
-    console.log('[AuthProvider] Loading user profile for:', userId)
     
     try {
-      // Create a longer timeout for profile loading
-      const profileTimeout = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Profile loading timeout')), 5000) // Increased from 2s to 5s
-      )
-
-      // Try to get user profile with a timeout
-      debugLog('Querying user profile...')
-      console.log('[AuthProvider] Executing profile query...')
-      
-      const profileQuery = supabase
+      const { data, error } = await supabase
         .from('user_profiles')
         .select(`
           *,
@@ -228,67 +137,23 @@ export function AuthProvider({ children }) {
         .eq('id', userId)
         .single()
 
-      let result
-
-      try {
-        result = await Promise.race([profileQuery, profileTimeout])
-        debugLog('Profile query completed:', { hasData: !!result.data, error: result.error })
-        console.log('[AuthProvider] Profile query result:', { 
-          hasData: !!result.data, 
-          error: result.error?.message || 'none',
-          profileId: result.data?.id,
-          agencyId: result.data?.agency_id,
-          agencyName: result.data?.agencies?.name
-        })
-      } catch (timeoutError) {
-        debugLog('Profile loading timed out, signing out user')
-        console.log('[AuthProvider] Profile loading timed out after 5s')
-        await supabase.auth.signOut()
+      if (error || !data) {
+        debugLog('Profile error or not found:', error)
         setUser(null)
         setProfile(null)
         setAgency(null)
-        setLoading(false)
-        // Only redirect if not already on login page
-        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-          router.push('/login')
-        }
-        throw timeoutError
+        return
       }
 
-      if (result.error || !result.data) {
-        debugLog('Profile error or not found - user not authorized:', result.error)
-        console.log('[AuthProvider] Profile not found or access denied:', result.error?.message || 'no data')
-        await supabase.auth.signOut()
-        setUser(null)
-        setProfile(null)
-        setAgency(null)
-        setLoading(false)
-        // Only redirect if not already on login page
-        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-          router.push('/login')
-        }
-        throw new Error('Profile not found or unauthorized')
-      }
-
-      debugLog('Successfully loaded profile, setting state')
-      console.log('[AuthProvider] Profile loaded successfully, setting auth state')
-      setProfile(result.data)
-      setAgency(result.data.agencies || null)
-      setLoading(false)
+      debugLog('Profile loaded successfully')
+      setProfile(data)
+      setAgency(data.agencies || null)
 
     } catch (error) {
-      debugLog('Unexpected error in loadUserProfile:', error)
-      console.log('[AuthProvider] Unexpected error loading profile:', error.message)
-      await supabase.auth.signOut()
+      debugLog('Error in loadUserProfile:', error)
       setUser(null)
       setProfile(null)
       setAgency(null)
-      setLoading(false)
-      // Only redirect if not already on login page
-      if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-        router.push('/login')
-      }
-      throw error
     }
   }
 
