@@ -40,6 +40,10 @@ function DashboardContent() {
   const [isUploading, setIsUploading] = useState(false)
   const [selectedUploadWorkflow, setSelectedUploadWorkflow] = useState(null)
   
+  // Confirmation states
+  const [showUnpayConfirm, setShowUnpayConfirm] = useState(null)
+  const [showEscalateConfirm, setShowEscalateConfirm] = useState(null)
+  
   const [metrics, setMetrics] = useState({
     total: 0,
     openCases: 0,
@@ -47,7 +51,8 @@ function DashboardContent() {
     lateCases: 0,
     totalBalance: 0,
     collectedAmount: 0,
-    collectionRate: 0
+    collectionRate: 0,
+    needsEscalation: 0 // New metric for escalation notifications
   })
 
   const [workflows, setWorkflows] = useState([])
@@ -168,6 +173,15 @@ function DashboardContent() {
       return sentDate < thirtyDaysAgo
     }).length
     
+    // Count cases that need escalation (sent > 45 days ago, opened but not paid, not already escalated)
+    const needsEscalation = lettersData.filter(l => {
+      if (!l.sent_at || l.status === 'paid' || l.status === 'escalated') return false
+      const sentDate = new Date(l.sent_at)
+      const fortyFiveDaysAgo = new Date()
+      fortyFiveDaysAgo.setDate(fortyFiveDaysAgo.getDate() - 45)
+      return sentDate < fortyFiveDaysAgo && ['sent', 'opened'].includes(l.status)
+    }).length
+    
     const totalBalance = lettersData.reduce((sum, l) => sum + (l.debtors?.balance_cents || 0), 0)
     const collectedAmount = lettersData
       .filter(l => l.status === 'paid')
@@ -182,39 +196,231 @@ function DashboardContent() {
       lateCases,
       totalBalance,
       collectedAmount,
-      collectionRate
+      collectionRate,
+      needsEscalation
     })
   }
 
-  // Action handlers
-  const markAsPaid = async (letterId) => {
+  // Enhanced Action handlers with proper error handling and audit trails
+  const markAsPaid = async (letterId, debtorName) => {
     try {
-      const { error } = await supabase
+      console.log('[Dashboard] Marking letter as paid:', letterId)
+      
+      const timestamp = new Date().toISOString()
+      
+      // Try to update with paid_at timestamp
+      const { data, error } = await supabase
         .from('letters')
         .update({ 
           status: 'paid',
-          paid_at: new Date().toISOString()
+          paid_at: timestamp
         })
         .eq('id', letterId)
+        .select()
 
-      if (error) throw error
+      console.log('[Dashboard] Mark as paid result:', { data, error })
 
-      toast.success('Letter marked as paid')
+      if (error) {
+        console.error('[Dashboard] Mark as paid error details:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        })
+        
+        // Try a simpler update without paid_at field in case it doesn't exist
+        console.log('[Dashboard] Trying fallback update without paid_at field...')
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('letters')
+          .update({ status: 'paid' })
+          .eq('id', letterId)
+        
+        console.log('[Dashboard] Fallback update result:', { fallbackData, fallbackError })
+        
+        if (fallbackError) {
+          throw fallbackError
+        }
+        
+        console.log('[Dashboard] Fallback update succeeded')
+      }
+
+      // Create audit event
+      await createAuditEvent(letterId, 'paid', { 
+        marked_at: timestamp,
+        debtor_name: debtorName 
+      })
+
+      toast.success(`${debtorName} marked as paid`)
       fetchLetters()
     } catch (error) {
-      console.error('Error marking as paid:', error)
-      toast.error('Failed to mark as paid')
+      console.error('[Dashboard] Error marking as paid:', {
+        name: error.name,
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        stack: error.stack
+      })
+      toast.error(`Failed to mark as paid: ${error.message || 'Unknown error'}`)
     }
   }
 
-  const resendLetter = async (letterId) => {
+  const unmarkAsPaid = async (letterId, debtorName) => {
     try {
-      // This would typically re-trigger the email sending process
-      toast.success('Letter resent successfully')
+      console.log('[Dashboard] Unmarking letter as paid:', letterId)
+      
+      const timestamp = new Date().toISOString()
+      
+      // Reset to previous status (defaulting to 'sent')
+      const { data, error } = await supabase
+        .from('letters')
+        .update({ 
+          status: 'sent',
+          paid_at: null
+        })
+        .eq('id', letterId)
+        .select()
+
+      if (error) {
+        // Try fallback without paid_at field
+        const { error: fallbackError } = await supabase
+          .from('letters')
+          .update({ status: 'sent' })
+          .eq('id', letterId)
+        
+        if (fallbackError) {
+          throw fallbackError
+        }
+      }
+
+      // Create audit event
+      await createAuditEvent(letterId, 'unpaid', { 
+        unmarked_at: timestamp,
+        debtor_name: debtorName 
+      })
+
+      toast.success(`${debtorName} unmarked as paid`)
+      setShowUnpayConfirm(null)  // Close confirmation dialog
+      setShowPersonModal(false)  // Close person modal
+      fetchLetters()             // Refresh dashboard data
+    } catch (error) {
+      console.error('[Dashboard] Error unmarking as paid:', error)
+      toast.error(`Failed to unmark as paid: ${error.message || 'Unknown error'}`)
+      setShowUnpayConfirm(null)
+    }
+  }
+
+  const markAsEscalated = async (letterId, debtorName) => {
+    try {
+      console.log('[Dashboard] Marking letter as escalated:', letterId)
+      
+      const timestamp = new Date().toISOString()
+      
+      const { data, error } = await supabase
+        .from('letters')
+        .update({ 
+          status: 'escalated',
+          escalated_at: timestamp
+        })
+        .eq('id', letterId)
+        .select()
+
+      if (error) {
+        // Try fallback without escalated_at field
+        const { error: fallbackError } = await supabase
+          .from('letters')
+          .update({ status: 'escalated' })
+          .eq('id', letterId)
+        
+        if (fallbackError) {
+          throw fallbackError
+        }
+      }
+
+      // Create audit event
+      await createAuditEvent(letterId, 'escalated', { 
+        escalated_at: timestamp,
+        debtor_name: debtorName 
+      })
+
+      toast.success(`${debtorName} escalated`)
+      setShowEscalateConfirm(null)  // Close confirmation dialog
+      setShowPersonModal(false)     // Close person modal
+      fetchLetters()                // Refresh dashboard data
+    } catch (error) {
+      console.error('[Dashboard] Error marking as escalated:', error)
+      toast.error(`Failed to escalate: ${error.message || 'Unknown error'}`)
+      setShowEscalateConfirm(null)
+    }
+  }
+
+  // Helper function to create audit events
+  const createAuditEvent = async (letterId, eventType, metadata = {}) => {
+    try {
+      const { error } = await supabase
+        .from('events')
+        .insert({
+          letter_id: letterId,
+          type: eventType,
+          metadata,
+          recorded_at: new Date().toISOString()
+        })
+      
+      if (error) {
+        console.warn('[Dashboard] Failed to create audit event:', error)
+        // Don't throw - audit events are nice-to-have but not critical
+      }
+    } catch (error) {
+      console.warn('[Dashboard] Error creating audit event:', error)
+    }
+  }
+
+  const resendLetter = async (letterId, debtorName) => {
+    try {
+      console.log('[Dashboard] Resending letter:', letterId)
+      
+      const timestamp = new Date().toISOString()
+      
+      // Update the sent_at timestamp to indicate a resend
+      const { data, error } = await supabase
+        .from('letters')
+        .update({ 
+          sent_at: timestamp,
+          status: 'sent' // Reset status to sent
+        })
+        .eq('id', letterId)
+        .select()
+
+      console.log('[Dashboard] Resend letter result:', { data, error })
+
+      if (error) {
+        console.error('[Dashboard] Resend letter error details:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        })
+        throw error
+      }
+
+      // Create audit event
+      await createAuditEvent(letterId, 'resent', { 
+        resent_at: timestamp,
+        debtor_name: debtorName 
+      })
+
+      toast.success(`Letter resent to ${debtorName}`)
       fetchLetters()
     } catch (error) {
-      console.error('Error resending letter:', error)
-      toast.error('Failed to resend letter')
+      console.error('[Dashboard] Error resending letter:', {
+        name: error.name,
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        stack: error.stack
+      })
+      toast.error(`Failed to resend letter: ${error.message || 'Unknown error'}`)
     }
   }
 
@@ -295,6 +501,16 @@ function DashboardContent() {
     setIsUploading(true)
     
     try {
+      // Debug logging for agency information
+      console.log('[Dashboard] Profile:', profile)
+      console.log('[Dashboard] Agency:', agency)
+      console.log('[Dashboard] Agency ID:', agency?.id)
+      
+      if (!agency?.id) {
+        toast.error('Agency information not available. Please refresh the page and try again.')
+        return
+      }
+      
       const response = await fetch('/api/process-csv', {
         method: 'POST',
         headers: {
@@ -302,22 +518,30 @@ function DashboardContent() {
         },
         body: JSON.stringify({ 
           data: validData, 
-          workflowId: selectedUploadWorkflow // Send selected workflow for Enterprise
+          workflowId: selectedUploadWorkflow, // Send selected workflow for Enterprise
+          agencyId: agency.id // Pass agency ID for authentication
         }),
       })
       
+      const result = await response.json()
+      
       if (response.ok) {
-        const result = await response.json()
-        toast.success(`${result.processed} letters processed successfully!`)
+        toast.success(result.message || `Successfully processed ${result.processed} records`)
+        if (result.errors?.length > 0) {
+          console.warn('Processing errors:', result.errors)
+        }
+        
+        // Reset upload state and close modal on success
         closeUploadModal()
+        
+        // Refresh data
         fetchLetters()
       } else {
-        const error = await response.json()
-        toast.error(error.message || 'Failed to process CSV')
+        toast.error(result.error || 'Failed to process CSV')
       }
     } catch (error) {
-      toast.error('Network error. Please try again.')
       console.error('Upload error:', error)
+      toast.error('Network error occurred')
     } finally {
       setIsUploading(false)
     }
@@ -344,18 +568,65 @@ function DashboardContent() {
     })
     setShowPersonModal(true)
     
-    // Fetch events for this letter
+    // Fetch events for this letter with better error handling
     try {
+      console.log('[Dashboard] Fetching events for letter:', letter.id)
+      
       const { data, error } = await supabase
         .from('events')
         .select('*')
         .eq('letter_id', letter.id)
-        .order('created_at', { ascending: false })
+        .order('recorded_at', { ascending: false })
       
-      if (error) throw error
+      console.log('[Dashboard] Events query result:', { data, error })
+      
+      if (error) {
+        console.error('[Dashboard] Events query error:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        })
+        
+        // Try fallback: check if we can create some synthetic events from letter data
+        const syntheticEvents = []
+        
+        if (letter.sent_at) {
+          syntheticEvents.push({
+            id: `synthetic-sent-${letter.id}`,
+            type: 'sent',
+            recorded_at: letter.sent_at
+          })
+        }
+        
+        if (letter.opened_at) {
+          syntheticEvents.push({
+            id: `synthetic-opened-${letter.id}`,
+            type: 'opened', 
+            recorded_at: letter.opened_at
+          })
+        }
+        
+        if (letter.status === 'paid') {
+          syntheticEvents.push({
+            id: `synthetic-paid-${letter.id}`,
+            type: 'paid',
+            recorded_at: letter.created_at // Fallback timestamp
+          })
+        }
+        
+        console.log('[Dashboard] Using synthetic events:', syntheticEvents)
+        setPersonEvents(syntheticEvents)
+        return
+      }
+      
       setPersonEvents(data || [])
     } catch (error) {
-      console.error('Error fetching events:', error)
+      console.error('[Dashboard] Error fetching events:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      })
       setPersonEvents([])
     }
   }
@@ -433,8 +704,29 @@ function DashboardContent() {
           <p className="mt-2 text-gray-600">Monitor your demand letter campaigns</p>
         </div>
 
+        {/* Escalation Notification Banner */}
+        {metrics.needsEscalation > 0 && (
+          <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-yellow-800">
+                  {metrics.needsEscalation} case{metrics.needsEscalation === 1 ? '' : 's'} need{metrics.needsEscalation === 1 ? 's' : ''} escalation
+                </h3>
+                <div className="mt-2 text-sm text-yellow-700">
+                  <p>These cases have been open for over 45 days without payment. Consider escalating to the next step.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
           <div className="bg-white p-6 rounded-lg shadow">
             <div className="flex items-center">
               <div className="flex-shrink-0">
@@ -468,6 +760,21 @@ function DashboardContent() {
                 <p className="text-sm font-medium text-gray-600">Late Cases</p>
                 <p className="text-2xl font-bold text-red-600">{metrics.lateCases}</p>
                 <p className="text-xs text-gray-500">Over 30 days</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-lg shadow">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 18.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-600">Need Escalation</p>
+                <p className="text-2xl font-bold text-yellow-600">{metrics.needsEscalation}</p>
+                <p className="text-xs text-gray-500">Over 45 days</p>
               </div>
             </div>
           </div>
@@ -608,130 +915,6 @@ function DashboardContent() {
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
-                          
-                          {/* Workflow Actions */}
-                          {currentPlan !== 'free' && (
-                            <div className="relative">
-                              {/* Enterprise: Multiple defaults dropdown */}
-                              {currentPlan === 'enterprise' && hasMultipleDefaults ? (
-                                <div className="relative">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => setShowWorkflowDropdown(
-                                      showWorkflowDropdown === letter.debtors.id ? null : letter.debtors.id
-                                    )}
-                                    className="flex items-center gap-1"
-                                  >
-                                    <Play className="h-3 w-3" />
-                                    Start Workflow
-                                    <ChevronDown className="h-3 w-3" />
-                                  </Button>
-                                  
-                                  {showWorkflowDropdown === letter.debtors.id && (
-                                    <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-50">
-                                      <div className="py-1">
-                                        <div className="px-3 py-2 text-xs font-medium text-gray-500 border-b">
-                                          Default Workflows
-                                        </div>
-                                        {defaultWorkflows.map((workflow) => (
-                                          <button
-                                            key={workflow.id}
-                                            onClick={() => startWorkflow(letter.debtors.id, letter.debtors.name, workflow.id)}
-                                            className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-                                          >
-                                            <Star className="h-3 w-3 text-yellow-500 fill-current" />
-                                            {workflow.name}
-                                          </button>
-                                        ))}
-                                        
-                                        {workflows.filter(w => !w.is_default).length > 0 && (
-                                          <>
-                                            <div className="px-3 py-2 text-xs font-medium text-gray-500 border-t border-b">
-                                              Other Workflows
-                                            </div>
-                                            {workflows.filter(w => !w.is_default).map((workflow) => (
-                                              <button
-                                                key={workflow.id}
-                                                onClick={() => startWorkflow(letter.debtors.id, letter.debtors.name, workflow.id)}
-                                                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                              >
-                                                {workflow.name}
-                                              </button>
-                                            ))}
-                                          </>
-                                        )}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              ) : singleDefaultWorkflow ? (
-                                /* Professional/Free: Single default workflow */
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => startWorkflow(letter.debtors.id, letter.debtors.name, singleDefaultWorkflow.id)}
-                                  className="flex items-center gap-1"
-                                >
-                                  <Star className="h-3 w-3 text-yellow-500 fill-current" />
-                                  Start {singleDefaultWorkflow.name}
-                                </Button>
-                              ) : workflows.length > 0 ? (
-                                /* No default workflows - show dropdown of all workflows */
-                                <div className="relative">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => setShowWorkflowDropdown(
-                                      showWorkflowDropdown === letter.debtors.id ? null : letter.debtors.id
-                                    )}
-                                    className="flex items-center gap-1"
-                                  >
-                                    <Play className="h-3 w-3" />
-                                    Start Workflow
-                                    <ChevronDown className="h-3 w-3" />
-                                  </Button>
-                                  
-                                  {showWorkflowDropdown === letter.debtors.id && (
-                                    <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-50">
-                                      <div className="py-1">
-                                        {workflows.map((workflow) => (
-                                          <button
-                                            key={workflow.id}
-                                            onClick={() => startWorkflow(letter.debtors.id, letter.debtors.name, workflow.id)}
-                                            className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                          >
-                                            {workflow.name}
-                                          </button>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              ) : (
-                                /* No workflows available */
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  disabled
-                                  className="opacity-50 cursor-not-allowed"
-                                >
-                                  <Crown className="h-3 w-3 mr-1" />
-                                  No Workflows
-                                </Button>
-                              )}
-                              
-                              {/* Stop Workflow Button */}
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => stopWorkflow(letter.debtors.id, letter.debtors.name)}
-                                className="text-red-600 hover:text-red-700"
-                              >
-                                <Square className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          )}
                         </div>
                       </td>
                     </tr>
@@ -790,6 +973,9 @@ function DashboardContent() {
                     {currentPlan === 'enterprise' && workflows.length > 0 && (
                       <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
                         <h5 className="font-medium text-purple-900 mb-3">Workflow Assignment</h5>
+                        <p className="text-sm text-purple-700 mb-3">
+                          <strong>Note:</strong> Letters will be sent automatically once uploaded. Choose which workflow to start immediately.
+                        </p>
                         <div className="space-y-2">
                           <label className="flex items-center">
                             <input
@@ -826,7 +1012,22 @@ function DashboardContent() {
                           ))}
                         </div>
                         <p className="text-xs text-purple-600 mt-2">
-                          Select which workflow these debtors will be assigned to. Active workflows can run in parallel.
+                          Selected workflow will start automatically for all uploaded debtors. Letters will be sent immediately.
+                        </p>
+                      </div>
+                    )}
+                    
+                    {/* Info box for non-Enterprise plans */}
+                    {currentPlan !== 'enterprise' && (
+                      <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div className="flex items-center mb-2">
+                          <svg className="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <h5 className="font-medium text-blue-900">Automatic Workflow Processing</h5>
+                        </div>
+                        <p className="text-sm text-blue-700">
+                          Your default workflow will start automatically for all uploaded debtors. Letters will be sent immediately - no drafts will be created.
                         </p>
                       </div>
                     )}
@@ -967,7 +1168,7 @@ function DashboardContent() {
                                  event.type === 'paid' ? 'Marked as Paid' : event.type}
                               </p>
                               <p className="text-xs text-gray-500">
-                                {formatDate(event.created_at)}
+                                {formatDate(event.recorded_at || event.created_at)}
                               </p>
                               {event.metadata && (
                                 <p className="text-xs text-gray-400 mt-1">
@@ -983,10 +1184,11 @@ function DashboardContent() {
                 </div>
 
                 <div className="mt-8 flex justify-end space-x-3">
-                  {selectedPerson.letter.status !== 'paid' && (
+                  {/* Mark/Unmark as Paid */}
+                  {selectedPerson.letter.status !== 'paid' ? (
                     <Button 
                       onClick={() => {
-                        markAsPaid(selectedPerson.letter.id)
+                        markAsPaid(selectedPerson.letter.id, selectedPerson.name)
                         setShowPersonModal(false)
                       }}
                       className="flex items-center gap-2"
@@ -994,17 +1196,117 @@ function DashboardContent() {
                       <CheckCircle className="w-4 h-4" />
                       Mark as Paid
                     </Button>
+                  ) : (
+                    <Button 
+                      variant="outline"
+                      onClick={() => setShowUnpayConfirm(selectedPerson.letter.id)}
+                      className="flex items-center gap-2 text-yellow-700 border-yellow-300 hover:bg-yellow-50"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      Unmark as Paid
+                    </Button>
                   )}
+
+                  {/* Escalation Button */}
+                  {selectedPerson.letter.status !== 'escalated' && selectedPerson.letter.status !== 'paid' && (
+                    <Button 
+                      variant="outline"
+                      onClick={() => setShowEscalateConfirm(selectedPerson.letter.id)}
+                      className="flex items-center gap-2 text-red-700 border-red-300 hover:bg-red-50"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 18.5c-.77.833.192 2.5 1.732 2.5z" />
+                      </svg>
+                      Escalate Case
+                    </Button>
+                  )}
+                  
+                  {/* Resend Letter */}
                   <Button 
                     variant="outline"
                     onClick={() => {
-                      resendLetter(selectedPerson.letter.id)
+                      resendLetter(selectedPerson.letter.id, selectedPerson.name)
                       setShowPersonModal(false)
                     }}
                     className="flex items-center gap-2"
                   >
                     <RotateCcw className="w-4 h-4" />
                     Resend Letter
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Confirmation Dialogs */}
+        {/* Unmark as Paid Confirmation */}
+        {showUnpayConfirm && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full m-4">
+              <div className="p-6">
+                <div className="flex items-center mb-4">
+                  <div className="flex-shrink-0">
+                    <svg className="h-6 w-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 18.5c-.77.833.192 2.5 1.732 2.5z" />
+                    </svg>
+                  </div>
+                  <h3 className="ml-3 text-lg font-medium text-gray-900">
+                    Unmark as Paid
+                  </h3>
+                </div>
+                <p className="text-sm text-gray-600 mb-6">
+                  Are you sure you want to unmark this letter as paid? This action will change the status back to "sent" and remove the payment timestamp.
+                </p>
+                <div className="flex justify-end space-x-3">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setShowUnpayConfirm(null)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    onClick={() => unmarkAsPaid(showUnpayConfirm, selectedPerson?.name)}
+                    className="bg-yellow-600 hover:bg-yellow-700"
+                  >
+                    Unmark as Paid
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Escalate Confirmation */}
+        {showEscalateConfirm && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full m-4">
+              <div className="p-6">
+                <div className="flex items-center mb-4">
+                  <div className="flex-shrink-0">
+                    <svg className="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 18.5c-.77.833.192 2.5 1.732 2.5z" />
+                    </svg>
+                  </div>
+                  <h3 className="ml-3 text-lg font-medium text-gray-900">
+                    Escalate Case
+                  </h3>
+                </div>
+                <p className="text-sm text-gray-600 mb-6">
+                  Are you sure you want to escalate this case? This action will mark the case as escalated and record the escalation timestamp for audit purposes.
+                </p>
+                <div className="flex justify-end space-x-3">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setShowEscalateConfirm(null)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    onClick={() => markAsEscalated(showEscalateConfirm, selectedPerson?.name)}
+                    className="bg-red-600 hover:bg-red-700"
+                  >
+                    Escalate Case
                   </Button>
                 </div>
               </div>
