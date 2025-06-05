@@ -49,7 +49,7 @@ export function AuthProvider({ children }) {
     if (!isLoginPage) {
       loadingTimeout = setTimeout(() => {
         debugLog('Auth loading timeout reached, forcing end of loading state')
-        console.log('[AuthProvider] TIMEOUT: Auth loading timeout after 10s, current state:', {
+        console.log('[AuthProvider] TIMEOUT: Auth loading timeout after 8s, current state:', {
           hasUser: !!user,
           hasProfile: !!profile,
           hasAgency: !!agency,
@@ -62,7 +62,7 @@ export function AuthProvider({ children }) {
           debugLog('Redirecting to login due to timeout')
           router.push('/login')
         }
-      }, 15000) // Increased timeout and only when not on login page
+      }, 8000) // Reduced from 15s to 8s for better responsiveness
     }
 
     // Get initial session with better error handling

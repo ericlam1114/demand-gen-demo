@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 export function ProtectedRoute({ children, requireAdmin = false }) {
   const { user, profile, loading } = useAuth()
   const router = useRouter()
-  const [redirectDelay, setRedirectDelay] = useState(false)
+  const [profileWaitStarted, setProfileWaitStarted] = useState(false)
 
   useEffect(() => {
     // Don't run protection logic on login page
@@ -27,20 +27,29 @@ export function ProtectedRoute({ children, requireAdmin = false }) {
       return
     }
 
-    // If we have a user but no profile, wait a bit longer before redirecting
-    // This gives AuthProvider more time to load the profile
-    if (user && !profile && !redirectDelay) {
-      console.log('[ProtectedRoute] User exists but no profile, waiting for profile to load...')
-      setRedirectDelay(true)
-      
-      const delayTimeout = setTimeout(() => {
-        if (!profile) {
-          console.log('[ProtectedRoute] Profile loading timeout, redirecting to login')
+    // If we have a user but no profile, wait a short time before redirecting
+    if (user && !profile) {
+      if (!profileWaitStarted) {
+        console.log('[ProtectedRoute] User exists but no profile, starting wait timer...')
+        setProfileWaitStarted(true)
+        
+        const delayTimeout = setTimeout(() => {
+          console.log('[ProtectedRoute] Profile wait timeout, redirecting to login')
           router.push('/login')
+        }, 3000) // 3 second wait
+        
+        return () => {
+          clearTimeout(delayTimeout)
+          setProfileWaitStarted(false)
         }
-      }, 2000) // Reduced timeout since AuthProvider has longer timeouts now
-      
-      return () => clearTimeout(delayTimeout)
+      }
+      return // Keep waiting while profile loads
+    }
+
+    // Reset wait state if we have a profile now
+    if (user && profile && profileWaitStarted) {
+      console.log('[ProtectedRoute] Profile loaded successfully')
+      setProfileWaitStarted(false)
     }
 
     // Check admin requirement
@@ -50,7 +59,7 @@ export function ProtectedRoute({ children, requireAdmin = false }) {
       return
     }
 
-  }, [user, profile, loading, requireAdmin, router, redirectDelay])
+  }, [user, profile, loading, requireAdmin, router, profileWaitStarted])
 
   // Don't show loading on login page
   if (typeof window !== 'undefined' && window.location.pathname.includes('/login')) {
@@ -67,8 +76,8 @@ export function ProtectedRoute({ children, requireAdmin = false }) {
     </div>
   }
 
-  // Show loading while waiting for profile
-  if (user && !profile && redirectDelay) {
+  // Show loading while waiting for profile (but only if we have a user)
+  if (user && !profile) {
     return <div className="flex items-center justify-center min-h-screen">
       <div className="text-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
@@ -82,11 +91,13 @@ export function ProtectedRoute({ children, requireAdmin = false }) {
     return children
   }
 
-  // Fallback loading state
+  // Fallback - this should not normally be reached
+  console.log('[ProtectedRoute] Fallback state reached - redirecting to login')
+  router.push('/login')
   return <div className="flex items-center justify-center min-h-screen">
     <div className="text-center">
       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-      <p className="text-gray-600">Authenticating...</p>
+      <p className="text-gray-600">Redirecting...</p>
     </div>
   </div>
 } 
