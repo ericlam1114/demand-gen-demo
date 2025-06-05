@@ -7,12 +7,13 @@ import { Button } from '@/components/ui/button'
 import { Menu, Bell, User, Settings, LogOut, Building2, Users, Eye, Crown } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
+import { supabase } from '@/lib/supabase'
 
 export function AppLayout({ children }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [impersonationContext, setImpersonationContext] = useState(null)
-  const { user, profile, agency, signOut, isAdmin } = useAuth()
+  const { user, profile, agency, isAdmin } = useAuth()
 
   useEffect(() => {
     // Check for impersonation context
@@ -31,32 +32,42 @@ export function AppLayout({ children }) {
   }
 
   const handleSignOut = async () => {
+    console.log('[AppLayout] Sign out button clicked')
+    setShowUserMenu(false) // Close the menu immediately
+    
     try {
-      console.log('[AppLayout] Sign out clicked')
-      setShowUserMenu(false) // Close the menu immediately
+      // Clear any local storage first
+      if (typeof window !== 'undefined') {
+        console.log('[AppLayout] Clearing local storage...')
+        // Clear Supabase auth storage
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('sb-')) {
+            localStorage.removeItem(key)
+          }
+        })
+      }
       
-      // Show loading toast
-      const toastId = toast.loading('Signing out...')
-      
-      const { error } = await signOut()
+      console.log('[AppLayout] Calling supabase signOut...')
+      const { error } = await supabase.auth.signOut()
       
       if (error) {
-        console.error('[AppLayout] Sign out error:', error)
-        toast.error('Sign out failed', { id: toastId })
-        // Try redirect anyway
-        setTimeout(() => {
-          window.location.href = '/login'
-        }, 1000)
+        console.error('[AppLayout] Supabase sign out error:', error)
+        toast.error(`Sign out failed: ${error.message}`)
       } else {
-        toast.success('Signed out successfully', { id: toastId })
-        // Redirect after brief delay to show toast
-        setTimeout(() => {
-          window.location.href = '/login'
-        }, 500)
+        console.log('[AppLayout] Sign out successful')
+        toast.success('Signed out successfully')
       }
+      
+      // Always redirect regardless of result
+      console.log('[AppLayout] Redirecting to login...')
+      setTimeout(() => {
+        window.location.href = '/login'
+      }, 500)
+      
     } catch (err) {
       console.error('[AppLayout] Sign out exception:', err)
-      toast.error('Sign out failed')
+      toast.error('Sign out failed - redirecting anyway')
+      
       // Force redirect even on error
       setTimeout(() => {
         window.location.href = '/login'
