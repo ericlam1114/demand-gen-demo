@@ -1,3 +1,4 @@
+"use client";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
@@ -58,13 +59,80 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
       <div className="max-w-md w-full bg-white rounded-lg shadow-xl p-8">
-        {/* Rest of your login form... */}
+        {/* Header */}
+        <div className="text-center mb-8">
+          <div className="flex justify-center mb-4">
+            <div className="p-3 bg-blue-100 rounded-full">
+              <Building2 className="h-8 w-8 text-blue-600" />
+            </div>
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900">Collections Pro</h1>
+          <p className="text-gray-600 mt-2">Sign in to your agency account</p>
+        </div>
+
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-md flex items-center">
+            <AlertCircle className="h-5 w-5 text-red-400 mr-3" />
+            <span className="text-sm text-red-600">{error}</span>
+          </div>
+        )}
+
+        {/* Login Form */}
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Form fields... */}
+          {/* Email Field */}
+          <div>
+            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+              Email Address
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Mail className="h-5 w-5 text-gray-400" />
+              </div>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                className="appearance-none block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Enter your email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={loading || authLoading}
+              />
+            </div>
+          </div>
+
+          {/* Password Field */}
+          <div>
+            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
+              Password
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Lock className="h-5 w-5 text-gray-400" />
+              </div>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                required
+                className="appearance-none block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={loading || authLoading}
+              />
+            </div>
+          </div>
+
+          {/* Submit Button */}
           <Button
             type="submit"
             disabled={loading || authLoading}
-            className="w-full py-3"
+            className="w-full py-3 bg-blue-600 hover:bg-blue-700 focus:ring-blue-500"
           >
             {loading ? (
               <>
@@ -113,13 +181,13 @@ export default function LoginPage() {
         </div>
 
         {/* Debug Info (remove in production) */}
-        {/* {process.env.NODE_ENV === 'development' && (
+        {process.env.NODE_ENV === 'development' && (
           <div className="mt-4 p-2 bg-gray-100 rounded text-xs text-gray-600">
             <div>Auth State: {authLoading ? 'Loading' : 'Ready'}</div>
             <div>User: {user ? user.email : 'None'}</div>
             <div>Profile: {profile ? 'Loaded' : 'Not loaded'}</div>
           </div>
-        )} */}
+        )}
       </div>
     </div>
   );
