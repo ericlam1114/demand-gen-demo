@@ -1027,7 +1027,7 @@ function DashboardContent() {
                           <h5 className="font-medium text-blue-900">Automatic Workflow Processing</h5>
                         </div>
                         <p className="text-sm text-blue-700">
-                          Your default workflow will start automatically for all uploaded debtors. Letters will be sent immediately - no drafts will be created.
+                          Your default workflow will start automatically for all uploaded debtors. Letters will be sent immediately.
                         </p>
                       </div>
                     )}
