@@ -107,9 +107,9 @@ export function AppLayout({ children }) {
             )}
 
             {/* Notifications */}
-            <Button variant="ghost" size="sm">
+            {/* <Button variant="ghost" size="sm">
               <Bell className="w-5 h-5 text-gray-600" />
-            </Button>
+            </Button> */}
 
             {/* User Menu */}
             <div className="relative">
