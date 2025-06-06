@@ -42,7 +42,8 @@ import {
   Star,
   StarOff,
   Crown,
-  AlertCircle
+  AlertCircle,
+  GitBranch
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -449,6 +450,54 @@ function WorkflowsContent() {
     }
   }
 
+  const deleteWorkflow = async (workflowId) => {
+    try {
+      const workflowToDelete = workflows.find(w => w.id === workflowId)
+      
+      // Check if this workflow has active enrollments
+      const { data: enrollments, error: enrollmentError } = await supabase
+        .from('debtor_workflows')
+        .select('id')
+        .eq('workflow_id', workflowId)
+        .eq('status', 'active')
+        .limit(1)
+
+      if (enrollmentError) throw enrollmentError
+
+      if (enrollments && enrollments.length > 0) {
+        toast.error('Cannot delete workflow: It has active debtor enrollments')
+        return
+      }
+
+      // Confirm deletion
+      if (!confirm(`Are you sure you want to delete "${workflowToDelete?.name}"? This action cannot be undone.`)) {
+        return
+      }
+
+      // Delete the workflow (cascade delete will handle steps and enrollments)
+      const { error } = await supabase
+        .from('workflows')
+        .delete()
+        .eq('id', workflowId)
+
+      if (error) throw error
+
+      toast.success('Workflow deleted successfully')
+      
+      // If the deleted workflow was selected, clear selection
+      if (selectedWorkflow?.id === workflowId) {
+        setSelectedWorkflow(null)
+        setWorkflowSteps([])
+        setIsEditing(false)
+      }
+
+      fetchWorkflows()
+    } catch (error) {
+      console.error('Error deleting workflow:', error)
+      toast.error('Failed to delete workflow: ' + (error.message || 'Unknown error'))
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-8">
@@ -605,35 +654,52 @@ function WorkflowsContent() {
                           )}
                         </div>
                       </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (workflowsEnabled) {
-                          toggleDefault(workflow.id)
+                      <div className="flex items-center space-x-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (workflowsEnabled) {
+                            toggleDefault(workflow.id)
+                            }
+                          }}
+                          className={`p-1 rounded ${
+                            workflow.is_default
+                              ? 'text-yellow-500 hover:text-yellow-600'
+                              : 'text-gray-400 hover:text-gray-600'
+                          } ${!workflowsEnabled ? 'pointer-events-none' : ''} ${
+                            !workflow.is_default && !canSetMoreDefaults ? 'opacity-50 cursor-not-allowed' : ''
+                          }`}
+                          title={
+                            workflow.is_default 
+                              ? 'Default workflow - click to remove' 
+                              : canSetMoreDefaults 
+                                ? 'Set as default' 
+                                : 'Default workflow already set'
                           }
-                        }}
-                        className={`ml-2 p-1 rounded ${
-                          workflow.is_default
-                            ? 'text-yellow-500 hover:text-yellow-600'
-                            : 'text-gray-400 hover:text-gray-600'
-                        } ${!workflowsEnabled ? 'pointer-events-none' : ''} ${
-                          !workflow.is_default && !canSetMoreDefaults ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                        title={
-                          workflow.is_default 
-                            ? 'Default workflow - click to remove' 
-                            : canSetMoreDefaults 
-                              ? 'Set as default' 
-                              : 'Default workflow already set'
-                        }
-                        disabled={!workflowsEnabled || (!workflow.is_default && !canSetMoreDefaults)}
-                      >
-                        {workflow.is_default ? (
-                          <Star className="w-4 h-4 fill-current" />
-                        ) : (
-                          <StarOff className="w-4 h-4" />
-                        )}
-                      </button>
+                          disabled={!workflowsEnabled || (!workflow.is_default && !canSetMoreDefaults)}
+                        >
+                          {workflow.is_default ? (
+                            <Star className="w-4 h-4 fill-current" />
+                          ) : (
+                            <StarOff className="w-4 h-4" />
+                          )}
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (workflowsEnabled) {
+                              deleteWorkflow(workflow.id)
+                            }
+                          }}
+                          className={`p-1 rounded text-gray-400 hover:text-red-600 transition-colors ${
+                            !workflowsEnabled ? 'pointer-events-none' : ''
+                          }`}
+                          title="Delete workflow"
+                          disabled={!workflowsEnabled}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                     {workflow.is_default && (
                       <div className="text-xs text-yellow-600 mt-1 font-medium">
@@ -708,10 +774,22 @@ function WorkflowsContent() {
                           </Button>
                         </>
                       ) : (
-                        <Button variant="outline" onClick={() => setIsEditing(true)}>
-                          <Edit3 className="w-4 h-4 mr-2" />
-                          Edit
-                        </Button>
+                        <>
+                          <Button variant="outline" onClick={() => setIsEditing(true)}>
+                            <Edit3 className="w-4 h-4 mr-2" />
+                            Edit
+                          </Button>
+                          {selectedWorkflow && (
+                            <Button 
+                              variant="outline" 
+                              onClick={() => deleteWorkflow(selectedWorkflow.id)}
+                              className="text-red-600 hover:text-red-700 hover:border-red-300"
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Delete
+                            </Button>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
@@ -784,88 +862,103 @@ function WorkflowsContent() {
                         </div>
 
                         {isEditing && (
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Action Type
-                              </label>
-                              <select
-                                value={step.step_type}
-                                onChange={(e) => updateStep(index, 'step_type', e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                              >
-                                {WORKFLOW_STEPS.map(stepType => {
-                                  const isAllowed = allowedStepTypes.includes(stepType.id)
-                                  return (
-                                    <option 
-                                      key={stepType.id} 
-                                      value={stepType.id}
-                                      disabled={!isAllowed}
-                                    >
-                                      {stepType.name} {!isAllowed ? '(Upgrade Required)' : ''}
-                                  </option>
-                                  )
-                                })}
-                              </select>
-                            </div>
-
-                            {index > 0 && (
+                          <div className="mt-6 bg-white rounded-lg border border-gray-200 p-4">
+                            <h5 className="text-sm font-semibold text-gray-700 mb-4 flex items-center">
+                              <Settings className="w-4 h-4 mr-2" />
+                              Step Configuration
+                            </h5>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                               <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                  Delay (Days)
-                                </label>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={step.delay_days || 0}
-                                  onChange={(e) => updateStep(index, 'delay_days', parseInt(e.target.value) || 0)}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                />
-                              </div>
-                            )}
-
-                            {step.step_type !== 'wait' && (
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                  Template
+                                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                  📧 Action Type
                                 </label>
                                 <select
-                                  value={step.template_id || ''}
-                                  onChange={(e) => updateStep(index, 'template_id', e.target.value)}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                  value={step.step_type}
+                                  onChange={(e) => updateStep(index, 'step_type', e.target.value)}
+                                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white"
                                 >
-                                  <option value="">Select template</option>
-                                  {templates
-                                    .filter(template => template.channel === step.step_type)
-                                    .map(template => (
-                                    <option key={template.id} value={template.id}>
-                                      {template.name}
-                                    </option>
-                                  ))}
+                                  {WORKFLOW_STEPS.map(stepType => {
+                                    const isAllowed = allowedStepTypes.includes(stepType.id)
+                                    return (
+                                      <option 
+                                        key={stepType.id} 
+                                        value={stepType.id}
+                                        disabled={!isAllowed}
+                                      >
+                                        {stepType.name} {!isAllowed ? '(Upgrade Required)' : ''}
+                                      </option>
+                                    )
+                                  })}
                                 </select>
-                                {templates.filter(template => template.channel === step.step_type).length === 0 && (
-                                  <p className="text-xs text-amber-600 mt-1">
-                                    No {step.step_type} templates available. Create one in the Templates section first.
-                                  </p>
-                                )}
                               </div>
-                            )}
+
+                              {index > 0 && (
+                                <div>
+                                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                    ⏰ Delay (Days)
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={step.delay_days || 0}
+                                    onChange={(e) => updateStep(index, 'delay_days', parseInt(e.target.value) || 0)}
+                                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white"
+                                    placeholder="0"
+                                  />
+                                </div>
+                              )}
+
+                              {step.step_type !== 'wait' && (
+                                <div>
+                                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                    📝 Template
+                                  </label>
+                                  <select
+                                    value={step.template_id || ''}
+                                    onChange={(e) => updateStep(index, 'template_id', e.target.value)}
+                                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white"
+                                  >
+                                    <option value="">Select template</option>
+                                    {templates
+                                      .filter(template => template.channel === step.step_type)
+                                      .map(template => (
+                                      <option key={template.id} value={template.id}>
+                                        {template.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {templates.filter(template => template.channel === step.step_type).length === 0 && (
+                                    <div className="mt-2 p-2 bg-amber-50 rounded-lg border border-amber-200">
+                                      <p className="text-xs text-amber-700">
+                                        ⚠️ No {step.step_type} templates available. Create one in the Templates section first.
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         )}
 
                         {!isEditing && step.template_id && (
-                          <div className="mt-2 text-sm text-gray-600">
-                            Template: {templates.find(t => t.id === step.template_id)?.name || 'Unknown'}
+                          <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+                            <p className="text-xs font-semibold text-blue-800 mb-1">📝 Template</p>
+                            <p className="text-sm text-blue-900">{templates.find(t => t.id === step.template_id)?.name || 'Unknown Template'}</p>
                           </div>
                         )}
                       </div>
                     ))}
 
                     {workflowSteps.length === 0 && (
-                      <div className="text-center py-8 text-gray-500">
-                        <p>No steps defined</p>
+                      <div className="text-center py-12">
+                        <div className="bg-gray-100 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+                          <GitBranch className="w-8 h-8 text-gray-400" />
+                        </div>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">No Steps Defined</h3>
+                        <p className="text-gray-500 mb-6">Add your first step to create an automated workflow sequence</p>
                         {isEditing && (
-                          <Button className="mt-2" onClick={addStep}>
+                          <Button className="bg-purple-600 hover:bg-purple-700" onClick={addStep}>
+                            <Plus className="w-4 h-4 mr-2" />
                             Add First Step
                           </Button>
                         )}
