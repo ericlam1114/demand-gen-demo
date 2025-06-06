@@ -28,8 +28,16 @@ import {
   Search,
   X,
   ChevronRight,
+  Workflow,
   Activity,
-  Send
+  Send,
+  Calendar,
+  CalendarCheck,
+  CalendarX,
+  CalendarCheck2,
+  CalendarX2,
+  CalendarCheck3,
+  CalendarX3,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -58,6 +66,11 @@ function VisualizerContent() {
       outputGeneration: { total: 0, processed: 0, pending: 0, failed: 0 }
     }
   })
+  const [dateRange, setDateRange] = useState({
+    start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    end: new Date().toISOString().split('T')[0]
+  })
+  const [expandedWorkflow, setExpandedWorkflow] = useState(null)
 
   // Fetch and calculate flow data
   const fetchFlowData = useCallback(async () => {
@@ -409,293 +422,337 @@ function VisualizerContent() {
     )
   }
 
-  return (
-    <div className="flex h-screen bg-gray-50">
-      {/* Main Flow Diagram Area */}
-      <div className="flex-1 overflow-auto">
-        <div className="p-8">
-          {/* Header */}
-          <div className="mb-8 flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 flex items-center">
-                <Users className="w-6 h-6 mr-2" />
-                User Initializing
-              </h1>
-              <p className="text-gray-500">Initializing for Automation</p>
-            </div>
-            
-            {/* Workflow Tabs */}
-            <div className="flex items-center space-x-4">
-              {flowData.workflows.map((workflow, index) => (
-                <button
-                  key={workflow.id}
-                  onClick={() => setSelectedWorkflow(workflow)}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    selectedWorkflow?.id === workflow.id 
-                      ? 'bg-blue-600 text-white' 
-                      : 'bg-white text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  {workflow.name}
-                </button>
-              ))}
-            </div>
-          </div>
+  // Pipeline Node Component - for showing debtors at each stage
+  const PipelineNode = ({ title, count, value, color = 'blue', width = 'w-48', alerts = [] }) => {
+    const colorClasses = {
+      blue: 'bg-blue-100 border-blue-500 text-blue-900',
+      green: 'bg-green-100 border-green-500 text-green-900',
+      purple: 'bg-purple-100 border-purple-500 text-purple-900',
+      orange: 'bg-orange-100 border-orange-500 text-orange-900',
+      red: 'bg-red-100 border-red-500 text-red-900',
+      gray: 'bg-gray-100 border-gray-500 text-gray-900'
+    }
 
-          {/* Flow Diagram */}
-          <div className="relative" style={{ minHeight: '600px' }}>
-            {/* Initialize Data Node */}
-            <div className="absolute" style={{ top: '0px', left: '50px' }}>
-              <div className="bg-blue-100 text-blue-700 px-4 py-2 rounded-full text-sm font-medium mb-4">
-                Initialize Data
+    return (
+      <div className={`relative ${width} min-h-[100px] rounded-lg border-2 ${colorClasses[color]} p-4 shadow-sm`}>
+        <h3 className="font-semibold text-sm mb-1">{title}</h3>
+        <p className="text-2xl font-bold">{count}</p>
+        <p className="text-xs opacity-75">{formatCurrency(value)}</p>
+        {alerts.length > 0 && (
+          <div className="mt-2 space-y-1">
+            {alerts.map((alert, idx) => (
+              <div key={idx} className="text-xs flex items-center">
+                <AlertTriangle className="w-3 h-3 mr-1" />
+                {alert}
               </div>
-            </div>
-
-            {/* Setup Automation Node */}
-            <div className="absolute" style={{ top: '0px', right: '50px' }}>
-              <div className="bg-green-100 text-green-700 px-4 py-2 rounded-full text-sm font-medium mb-4">
-                Setup Automation
-              </div>
-            </div>
-
-            {/* Data Collection Node */}
-            <div className="absolute" style={{ top: '100px', left: '50px' }}>
-              <FlowNode
-                title="Data Collection"
-                subtitle="Gathering Data Connected"
-                icon={Database}
-                stats={flowData.nodes.dataCollection}
-                color="blue"
-                isActive={true}
-              />
-            </div>
-
-            {/* Trigger Automation Node */}
-            <div className="absolute" style={{ top: '100px', right: '50px' }}>
-              <FlowNode
-                title="Trigger Automation"
-                subtitle="Workflows on Triggers"
-                icon={Zap}
-                stats={flowData.nodes.triggerAutomation}
-                color="purple"
-                isActive={true}
-              />
-            </div>
-
-            {/* Data Validation Node */}
-            <div className="absolute" style={{ top: '280px', left: '200px' }}>
-              <FlowNode
-                title="Data Validation"
-                subtitle="Ensuring Data Accuracy"
-                icon={Filter}
-                stats={flowData.nodes.dataValidation}
-                color="blue"
-              />
-            </div>
-
-            {/* Action Trigger Node */}
-            <div className="absolute" style={{ top: '460px', left: '200px' }}>
-              <FlowNode
-                title="Action Trigger"
-                subtitle="Performing Tasks Conditions"
-                icon={Target}
-                stats={flowData.nodes.actionTrigger}
-                color="orange"
-              />
-            </div>
-
-            {/* Output Generation Node */}
-            <div className="absolute" style={{ top: '640px', left: '200px' }}>
-              <FlowNode
-                title="Output Generation"
-                subtitle="Compiling Delivering Outputs"
-                icon={Package}
-                stats={flowData.nodes.outputGeneration}
-                color="green"
-              />
-            </div>
-
-            {/* Connection lines would go here - in a real implementation, these would be SVG paths */}
-            <div className="absolute inset-0 pointer-events-none">
-              <svg className="w-full h-full">
-                {/* Initialize to Data Collection */}
-                <line x1="150" y1="40" x2="150" y2="100" stroke="#CBD5E1" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                {/* Setup to Trigger */}
-                <line x1="600" y1="40" x2="600" y2="100" stroke="#CBD5E1" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                {/* Data Collection to Validation */}
-                <line x1="190" y1="200" x2="300" y2="280" stroke="#CBD5E1" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                {/* Trigger to Validation */}
-                <line x1="560" y1="200" x2="450" y2="280" stroke="#CBD5E1" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                {/* Validation to Action */}
-                <line x1="340" y1="380" x2="340" y2="460" stroke="#CBD5E1" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                {/* Action to Output */}
-                <line x1="340" y1="560" x2="340" y2="640" stroke="#CBD5E1" strokeWidth="2" markerEnd="url(#arrowhead)" />
-                
-                <defs>
-                  <marker
-                    id="arrowhead"
-                    markerWidth="10"
-                    markerHeight="7"
-                    refX="9"
-                    refY="3.5"
-                    orient="auto"
-                  >
-                    <polygon points="0 0, 10 3.5, 0 7" fill="#CBD5E1" />
-                  </marker>
-                </defs>
-              </svg>
-            </div>
+            ))}
           </div>
-        </div>
+        )}
       </div>
+    )
+  }
 
-      {/* Right Sidebar - Insight Metrics */}
-      <div className="w-96 bg-gray-100 border-l border-gray-200 overflow-y-auto">
+  // Workflow Step Node - for showing individual workflow steps
+  const WorkflowStepNode = ({ step, count, nextDate }) => {
+    const getStepIcon = (type) => {
+      switch(type) {
+        case 'email': return <Mail className="w-4 h-4" />
+        case 'sms': return <Send className="w-4 h-4" />
+        case 'wait': return <Clock className="w-4 h-4" />
+        default: return <Activity className="w-4 h-4" />
+      }
+    }
+
+    const getDaysUntilNext = () => {
+      if (!nextDate) return null
+      const now = new Date()
+      const next = new Date(nextDate)
+      const days = Math.ceil((next - now) / (1000 * 60 * 60 * 24))
+      return days
+    }
+
+    const daysUntil = getDaysUntilNext()
+
+    return (
+      <div className="bg-white rounded-lg border border-gray-200 p-3 min-w-[180px]">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center space-x-2">
+            {getStepIcon(step.type)}
+            <span className="text-sm font-medium">{step.name}</span>
+          </div>
+          <span className="text-xs text-gray-500">Step {step.order}</span>
+        </div>
+        <p className="text-xl font-bold text-gray-900">{count}</p>
+        {daysUntil !== null && (
+          <p className="text-xs text-gray-500 mt-1">
+            {daysUntil === 0 ? 'Executing today' : 
+             daysUntil > 0 ? `Next in ${daysUntil} days` : 
+             `Overdue by ${Math.abs(daysUntil)} days`}
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  // Stat Card Component
+  const StatCard = ({ title, count, percentage, status, onViewClick, children }) => {
+    const [expanded, setExpanded] = useState(false)
+    
+    return (
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         <div className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-semibold text-gray-900">Insight Metrics</h2>
-            <button className="text-gray-400 hover:text-gray-600">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
+          <h3 className="text-gray-700 text-sm font-medium mb-4">{title}</h3>
+          <div className="flex items-baseline justify-between mb-2">
+            <div className="flex items-baseline space-x-3">
+              <span className="text-4xl font-semibold text-gray-900">{count}</span>
+              <span className="text-gray-500 text-lg">{percentage}%</span>
+            </div>
+          </div>
+          
+          <div className="flex items-center justify-between mt-4">
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="text-sm text-gray-600 hover:text-gray-900 flex items-center"
+            >
+              Details
+              <ChevronRight className={`w-4 h-4 ml-1 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+            </button>
+            
+            <button
+              onClick={onViewClick}
+              className="text-sm text-blue-600 hover:text-blue-700 flex items-center"
+            >
+              <Users className="w-4 h-4 mr-1" />
+              View
             </button>
           </div>
-
-          {/* Search */}
-          <div className="relative mb-6">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input
-              type="text"
-              placeholder="Search Here..."
-              className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+        </div>
+        
+        {expanded && children && (
+          <div className="border-t border-gray-200 px-6 py-4 bg-gray-50">
+            {children}
           </div>
+        )}
+      </div>
+    )
+  }
 
-          <div className="space-y-4">
-            {/* Automation Coverage */}
-            <MetricCard
-              title="Automation Coverage"
-              subtitle={`Your last week is better ${Math.round((flowData.inWorkflow.count / flowData.uploaded.count) * 100) || 0}%`}
-              percentage={Math.round((flowData.inWorkflow.count / flowData.uploaded.count) * 100) || 0}
-              expanded={expandedMetrics.coverage}
-              onToggle={() => toggleMetric('coverage')}
-            />
+  // Calculate statistics
+  const stats = {
+    started: flowData.uploaded.count,
+    finished: flowData.paid.count,
+    suspended: flowData.escalated.count,
+    inProgress: flowData.inWorkflow.count
+  }
 
-            {/* Workflow Metrics */}
-            {flowData.workflows.slice(0, 2).map((workflow, index) => (
-              <MetricCard
-                key={workflow.id}
-                title={`Workflow ${String.fromCharCode(65 + index)}`}
-                subtitle={workflow.isDefault ? 'Default Workflow' : 'Triggered by User Actions'}
-                expanded={expandedMetrics[`workflow${String.fromCharCode(65 + index)}`]}
-                onToggle={() => toggleMetric(`workflow${String.fromCharCode(65 + index)}`)}
+  const getPercentage = (count) => {
+    return stats.started > 0 ? Math.round((count / stats.started) * 100) : 0
+  }
+
+  return (
+    <div className="p-8 bg-gray-50 min-h-screen">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-2xl font-semibold text-gray-900 mb-4">Workflow Statistics</h1>
+          
+          {/* Date Range Selector */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+            <h3 className="text-sm font-medium text-gray-700 mb-3">Statistics date period</h3>
+            <div className="flex items-center space-x-4">
+              <input
+                type="date"
+                value={dateRange.start}
+                onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <span className="text-gray-500">–</span>
+              <input
+                type="date"
+                value={dateRange.end}
+                onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button className="p-2 text-gray-400 hover:text-gray-600">
+                <Calendar className="w-5 h-5" />
+              </button>
+              <button 
+                onClick={() => fetchFlowData()}
+                className="p-2 text-gray-400 hover:text-gray-600"
               >
-                <div className="space-y-3">
-                  {workflow.stepDetails.map((step) => (
-                    <div key={step.order} className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <div className={`w-2 h-2 rounded-full ${
-                          step.type === 'email' ? 'bg-blue-500' : 
-                          step.type === 'wait' ? 'bg-yellow-500' : 
-                          'bg-green-500'
-                        }`} />
-                        <span className="text-xs text-gray-600">{step.name}</span>
-                      </div>
-                      <span className="text-xs font-medium text-gray-900">{step.count}</span>
-                    </div>
-                  ))}
-                  <div className="pt-2 border-t border-gray-200">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-gray-600">Task: {workflow.active + workflow.completed}</span>
-                      <span className="text-gray-600">Exec: {workflow.active}</span>
-                      <span className="text-gray-600">Done: {workflow.completed}</span>
-                    </div>
-                  </div>
-                </div>
-              </MetricCard>
-            ))}
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              Last updated on {new Date().toLocaleString()}
+            </p>
+            <p className="text-sm text-gray-600 mt-3">
+              You're viewing information on contacts who went through this automation during the selected timeframe. Change dates to explore other time periods.
+            </p>
+          </div>
+        </div>
 
-            {/* Flow Objectives */}
-            <MetricCard
-              title="Flow Objectives"
-              subtitle=""
-              expanded={expandedMetrics.objectives}
-              onToggle={() => toggleMetric('objectives')}
-            >
-              <div className="space-y-4">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <h5 className="text-sm font-medium text-gray-900">Output Generation</h5>
-                    <button className="text-gray-400 hover:text-gray-600">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                      </svg>
-                    </button>
+        {/* Main Stats Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          {/* Started */}
+          <StatCard
+            title="Started"
+            count={stats.started}
+            percentage={100}
+            onViewClick={() => console.log('View started')}
+          >
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600">Contacts added to workflows</p>
+              <div className="space-y-2">
+                {flowData.workflows.map(workflow => (
+                  <div key={workflow.id} className="flex items-center justify-between text-sm">
+                    <span className="text-gray-700">{workflow.name}</span>
+                    <span className="font-medium">{workflow.active + workflow.completed}</span>
                   </div>
-                  <p className="text-xs text-gray-600 mb-2">Compiling Delivering Outputs</p>
-                  <div className="flex items-center space-x-4 text-sm">
-                    <div className="flex items-center">
-                      <Activity className="w-4 h-4 text-gray-600 mr-1" />
-                      <span>{flowData.nodes.outputGeneration.total}</span>
-                    </div>
-                    <div className="flex items-center">
-                      <CheckCircle className="w-4 h-4 text-green-600 mr-1" />
-                      <span className="text-green-600">{flowData.nodes.outputGeneration.processed}</span>
-                    </div>
-                    <div className="flex items-center">
-                      <Clock className="w-4 h-4 text-orange-600 mr-1" />
-                      <span className="text-orange-600">{flowData.nodes.outputGeneration.pending}</span>
-                    </div>
-                    <div className="flex items-center">
-                      <Zap className="w-4 h-4 text-purple-600 mr-1" />
-                      <span className="text-purple-600">{flowData.paid.count}</span>
-                    </div>
-                  </div>
-                </div>
+                ))}
+              </div>
+            </div>
+          </StatCard>
 
-                <div className="pt-4 border-t border-gray-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <h5 className="text-sm font-medium text-gray-900">Lorem Ipsum</h5>
-                    <button className="text-gray-400 hover:text-gray-600">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                      </svg>
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-600 mb-2">Lorem Ipsum Sit Dolor</p>
-                  <div className="flex items-center space-x-4 text-sm">
-                    <div className="flex items-center">
-                      <Database className="w-4 h-4 text-gray-600 mr-1" />
-                      <span>{flowData.uploaded.count}</span>
-                    </div>
-                    <div className="flex items-center">
-                      <Activity className="w-4 h-4 text-green-600 mr-1" />
-                      <span className="text-green-600">{flowData.inWorkflow.count}</span>
-                    </div>
-                    <div className="flex items-center">
-                      <Clock className="w-4 h-4 text-orange-600 mr-1" />
-                      <span className="text-orange-600">{flowData.completed.count}</span>
-                    </div>
-                    <div className="flex items-center">
-                      <Zap className="w-4 h-4 text-purple-600 mr-1" />
-                      <span className="text-purple-600">{flowData.escalated.count}</span>
-                    </div>
-                  </div>
+          {/* Finished */}
+          <StatCard
+            title="Finished"
+            count={stats.finished}
+            percentage={getPercentage(stats.finished)}
+            onViewClick={() => console.log('View finished')}
+          >
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600">Successfully collected payments</p>
+              <div className="text-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-gray-700">Total Collected</span>
+                  <span className="font-medium text-green-600">{formatCurrency(flowData.paid.value)}</span>
                 </div>
-
-                <div className="pt-4 border-t border-gray-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <h5 className="text-sm font-medium text-gray-900">Action Trigger</h5>
-                    <button className="text-gray-400 hover:text-gray-600">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                      </svg>
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-600 mb-2">Performing Tasks Conditions</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-700">Average Payment</span>
+                  <span className="font-medium">
+                    {stats.finished > 0 ? formatCurrency(flowData.paid.value / stats.finished) : '$0'}
+                  </span>
                 </div>
               </div>
-            </MetricCard>
+            </div>
+          </StatCard>
+
+          {/* Suspended/Escalated */}
+          <StatCard
+            title="Suspended"
+            count={stats.suspended}
+            percentage={getPercentage(stats.suspended)}
+            onViewClick={() => console.log('View suspended')}
+          >
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600">Cases escalated for further action</p>
+              <div className="text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-700">Total Value</span>
+                  <span className="font-medium text-red-600">{formatCurrency(flowData.escalated.value)}</span>
+                </div>
+              </div>
+            </div>
+          </StatCard>
+
+          {/* Contacts in Progress */}
+          <StatCard
+            title="Contacts in progress"
+            count={stats.inProgress}
+            percentage={getPercentage(stats.inProgress)}
+            onViewClick={() => console.log('View in progress')}
+          >
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600">Currently active in workflows</p>
+              <div className="text-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-gray-700">Total Value</span>
+                  <span className="font-medium">{formatCurrency(flowData.inWorkflow.value)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-700">Email Open Rate</span>
+                  <span className="font-medium text-blue-600">{flowData.emailMetrics.openRate}%</span>
+                </div>
+              </div>
+            </div>
+          </StatCard>
+        </div>
+
+        {/* Workflow Details */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <h3 className="text-lg font-medium text-gray-900 mb-6">Workflow Performance</h3>
+          
+          <div className="space-y-4">
+            {flowData.workflows.map((workflow) => {
+              const total = workflow.active + workflow.completed
+              const isExpanded = expandedWorkflow === workflow.id
+              
+              return (
+                <div key={workflow.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                  <button
+                    onClick={() => setExpandedWorkflow(isExpanded ? null : workflow.id)}
+                    className="w-full p-4 hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <Workflow className="w-5 h-5 text-blue-600" />
+                        <div className="text-left">
+                          <h4 className="font-medium text-gray-900">
+                            {workflow.name}
+                            {workflow.isDefault && (
+                              <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">Default</span>
+                            )}
+                          </h4>
+                          <p className="text-sm text-gray-500">
+                            {total} contacts • {workflow.active} active • {workflow.completed} completed
+                          </p>
+                        </div>
+                      </div>
+                      <ChevronRight className={`w-5 h-5 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                    </div>
+                  </button>
+                  
+                  {isExpanded && (
+                    <div className="border-t border-gray-200 p-4 bg-gray-50">
+                      <div className="space-y-3">
+                        <h5 className="text-sm font-medium text-gray-700 mb-3">Workflow Steps</h5>
+                        {workflow.stepDetails.map((step) => {
+                          const stepPercentage = total > 0 ? Math.round((step.count / total) * 100) : 0
+                          
+                          return (
+                            <div key={step.order} className="bg-white rounded-lg p-3 border border-gray-200">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center space-x-2">
+                                  {step.type === 'email' && <Mail className="w-4 h-4 text-blue-500" />}
+                                  {step.type === 'wait' && <Clock className="w-4 h-4 text-yellow-500" />}
+                                  {step.type === 'sms' && <Send className="w-4 h-4 text-green-500" />}
+                                  <span className="text-sm font-medium text-gray-900">
+                                    Step {step.order}: {step.name}
+                                  </span>
+                                </div>
+                                <div className="flex items-center space-x-3">
+                                  <span className="text-sm font-medium text-gray-900">{step.count}</span>
+                                  <span className="text-sm text-gray-500">{stepPercentage}%</span>
+                                </div>
+                              </div>
+                              <div className="w-full bg-gray-200 rounded-full h-2">
+                                <div 
+                                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                                  style={{ width: `${stepPercentage}%` }}
+                                />
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       </div>
