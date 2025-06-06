@@ -168,10 +168,13 @@ function DashboardContent() {
 
   const calculateMetrics = (lettersData) => {
     const openCases = lettersData.filter(l => ['draft', 'sent'].includes(l.status)).length
-    const closedCases = lettersData.filter(l => l.status === 'paid').length
+    const paidCases = lettersData.filter(l => l.status === 'paid').length
+    const escalatedCases = lettersData.filter(l => l.status === 'escalated').length
+    const closedCases = paidCases + escalatedCases // Include both paid and escalated as closed
+    
     const lateCases = lettersData.filter(l => {
-      // Consider cases late if sent more than 30 days ago and not paid
-      if (!l.sent_at || l.status === 'paid') return false
+      // Consider cases late if sent more than 30 days ago and not paid/escalated
+      if (!l.sent_at || ['paid', 'escalated'].includes(l.status)) return false
       const sentDate = new Date(l.sent_at)
       const thirtyDaysAgo = new Date()
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
@@ -198,6 +201,8 @@ function DashboardContent() {
       total: lettersData.length,
       openCases,
       closedCases,
+      paidCases,
+      escalatedCases,
       lateCases,
       totalBalance,
       collectedAmount,
@@ -957,6 +962,9 @@ function DashboardContent() {
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Closed Cases</p>
                 <p className="text-2xl font-bold text-green-600">{metrics.closedCases}</p>
+                <p className="text-xs text-gray-500">
+                  {metrics.paidCases} paid • {metrics.escalatedCases} escalated
+                </p>
               </div>
             </div>
           </div>
@@ -1028,7 +1036,7 @@ function DashboardContent() {
                   onChange={(e) => setStatusFilter(e.target.value)}
                 >
                   <option value="all">All Status</option>
-                  <option value="draft">Draft</option>
+                  {/* <option value="draft">Draft</option> */}
                   <option value="sent">Sent</option>
                   <option value="paid">Paid</option>
                   <option value="escalated">Escalated</option>

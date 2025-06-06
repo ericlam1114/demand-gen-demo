@@ -1011,7 +1011,15 @@ function WorkflowsContent() {
 
         {/* Preview Workflow Modal */}
         {showPreviewModal && previewWorkflow && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={closePreviewModal}>
+          <div 
+            className="fixed inset-0 flex items-center justify-center z-50" 
+            style={{
+              backgroundColor: 'rgba(0, 0, 0, 0.3)',
+              backdropFilter: 'blur(4px)',
+              WebkitBackdropFilter: 'blur(4px)'
+            }}
+            onClick={closePreviewModal}
+          >
             <div className="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
               <div className="flex justify-between items-center p-6 border-b border-gray-200">
                 <h3 className="text-xl font-semibold text-gray-900">Workflow Preview: {previewWorkflow.name}</h3>
