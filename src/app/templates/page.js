@@ -20,7 +20,8 @@ import {
   AlertTriangle,
   Smartphone,
   Mailbox,
-  Crown
+  Crown,
+  X
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -136,35 +137,255 @@ function TemplatesContent() {
     setShowDeleteModal(true)
   }
 
+  const loadSampleTemplates = async () => {
+    try {
+      setLoading(true)
+      
+      const sampleTemplates = [
+        // Email Templates
+        {
+          name: 'First Notice - Professional',
+          channel: 'email',
+          email_subject: 'Past Due Balance - ${{balance}}',
+          html_content: `Dear {{debtor_name}},
+
+We would like to bring to your attention that we have not yet received payment for the outstanding amount of ${{balance}} relating to your account. The payment was originally due on {{due_date}} and is now considered past due.
+
+To settle your overdue balance conveniently and securely, we encourage you to make your payment online by clicking here: {{payment_link}}
+
+Alternatively, you may mail your payment to the following address:
+
+{{company_name}}
+{{company_address}}
+{{company_city}}, {{company_state}}, {{company_zip}}
+
+If you have any inquiries regarding this balance or require assistance from a credit representative, please do not hesitate to reach out to {{contact_name}} at {{contact_email}} or {{contact_phone}}.
+
+We appreciate your prompt attention to this matter.
+
+Best regards,
+
+{{contact_name}}
+{{company_name}}`,
+          agency_id: agency?.id,
+          created_by: profile?.id,
+          is_default: false
+        },
+        {
+          name: 'Second Notice - Final Warning',
+          channel: 'email',
+          email_subject: 'FINAL NOTICE - Past Due Balance - ${{balance}}',
+          html_content: `Dear {{debtor_name}},
+
+This serves as our FINAL NOTICE regarding your past due balance of ${{balance}}. Despite our previous correspondence, this amount remains unpaid and is now significantly overdue.
+
+URGENT ACTION REQUIRED
+
+Your account is now {{days_past_due}} days past due. To avoid further collection action, including potential legal proceedings, you must contact us immediately to resolve this matter.
+
+Payment Options:
+• Online: {{payment_link}}
+• Mail payment to:
+  {{company_name}}
+  {{company_address}}
+  {{company_city}}, {{company_state}}, {{company_zip}}
+
+If you believe this notice is in error or wish to discuss payment arrangements, please contact {{contact_name}} immediately at {{contact_email}} or {{contact_phone}}.
+
+Time is of the essence. We must hear from you within 10 days of this notice to avoid escalation of this matter.
+
+Sincerely,
+
+{{contact_name}}
+{{contact_title}}
+{{company_name}}
+
+IMPORTANT NOTICE: This communication is from a debt collector and is an attempt to collect a debt. Any information obtained will be used for that purpose.`,
+          agency_id: agency?.id,
+          created_by: profile?.id,
+          is_default: false
+        },
+
+        // SMS Templates  
+        {
+          name: 'Payment Reminder - Friendly',
+          channel: 'sms',
+          sms_content: 'Hi {{name}}, friendly reminder of ${{balance}} balance. Call {{company_phone}} for payment options. Reply STOP to opt out.',
+          agency_id: agency?.id,
+          created_by: profile?.id,
+          is_default: false
+        },
+        {
+          name: 'Urgent Payment Notice',
+          channel: 'sms',
+          sms_content: 'URGENT: {{name}}, ${{balance}} past due. Call {{company_phone}} immediately. This is from a debt collector. Reply STOP to opt out.',
+          agency_id: agency?.id,
+          created_by: profile?.id,
+          is_default: false
+        },
+
+        // Physical Mail Templates
+        {
+          name: 'Formal Demand Letter',
+          channel: 'physical',
+          html_content: `{{current_date}}
+
+{{name}}
+{{address}}
+{{city}}, {{state}} {{zip}}
+
+DEMAND FOR PAYMENT
+
+Dear {{name}}:
+
+This letter serves as formal notice that you have an outstanding debt in the amount of ${{balance}}.
+
+This debt is now significantly past due, and despite our previous attempts to contact you, it remains unpaid.
+
+DEMAND FOR PAYMENT: You are hereby demanded to pay the above amount within thirty (30) days from the date of this letter.
+
+Failure to pay this amount or contact our office may result in legal action being taken against you.
+
+IMPORTANT LEGAL NOTICE
+This is an attempt to collect a debt. Any information obtained will be used for that purpose. Unless you notify this office within 30 days that you dispute the validity of this debt, this office will assume this debt is valid.
+
+To resolve this matter immediately, please contact our office at {{company_phone}}.
+
+Sincerely,
+
+{{collector_name}}
+{{company_name}}
+
+This communication is from a debt collector.`,
+          agency_id: agency?.id,
+          created_by: profile?.id,
+          is_default: false
+        }
+      ]
+
+      // Insert all sample templates
+      const { data, error } = await supabase
+        .from('templates')
+        .insert(sampleTemplates)
+        .select()
+
+      if (error) throw error
+
+      toast.success(`${data.length} sample templates created successfully!`)
+      fetchTemplates() // Refresh the templates list
+      
+    } catch (error) {
+      console.error('Error loading sample templates:', error)
+      toast.error('Failed to load sample templates')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const saveTemplate = async () => {
     try {
-      const templateData = {
-        ...editorData,
-        created_by: profile?.id,
-        agency_id: agency?.id
+      console.log('[Template Update] Save template called:', { 
+        isEditing, 
+        selectedTemplateId: selectedTemplate?.id, 
+        selectedTemplateType: typeof selectedTemplate,
+        editorData,
+        profileId: profile?.id,
+        agencyId: agency?.id 
+      })
+      
+      // Basic validation
+      if (!editorData.name?.trim()) {
+        toast.error('Please provide a template name')
+        return
       }
+
+      if (editorData.channel === 'email' && !editorData.email_subject?.trim()) {
+        toast.error('Please provide an email subject line')
+        return
+      }
+
+      if (editorData.channel === 'sms' && !editorData.sms_content?.trim()) {
+        toast.error('Please provide SMS content')
+        return
+      }
+
+      if ((editorData.channel === 'email' || editorData.channel === 'physical') && !editorData.html_content?.trim()) {
+        toast.error('Please provide template content')
+        return
+      }
+      
+      // Clean the data - only include fields that should be updated
+      const templateData = {
+        name: editorData.name,
+        channel: editorData.channel,
+        email_subject: editorData.email_subject,
+        sms_content: editorData.sms_content,
+        html_content: editorData.html_content,
+        is_default: editorData.is_default,
+        updated_at: new Date().toISOString()
+      }
+      
+      // For new templates, add creation fields
+      if (!isEditing) {
+        templateData.created_by = profile?.id
+        templateData.agency_id = agency?.id
+      }
+      
+      console.log('[Template Update] Clean template data:', templateData)
 
       let result
       if (isEditing && selectedTemplate) {
+        const templateId = typeof selectedTemplate === 'string' ? selectedTemplate : selectedTemplate.id
+        console.log('[Template Update] Updating existing template:', templateId)
+        console.log('[Template Update] Template data being sent:', templateData)
+        
         result = await supabase
           .from('templates')
           .update(templateData)
-          .eq('id', selectedTemplate.id)
+          .eq('id', templateId)
+          .select() // Add select to get back the updated data
+          
+        console.log('[Template Update] Full update result:', result)
+        console.log('[Template Update] Update data returned:', result.data)
+        console.log('[Template Update] Update error (if any):', result.error)
+        console.log('[Template Update] Update status code:', result.status)
+        console.log('[Template Update] Update statusText:', result.statusText)
       } else {
+        console.log('[Template Update] Creating new template')
         result = await supabase
           .from('templates')
           .insert(templateData)
+          .select() // Add select to get back the inserted data
+        console.log('[Template Update] Insert result:', result)
       }
 
-      if (result.error) throw result.error
+      if (result.error) {
+        console.error('[Template Update] Database error details:', {
+          message: result.error.message,
+          details: result.error.details,
+          hint: result.error.hint,
+          code: result.error.code
+        })
+        throw result.error
+      }
 
+      if (!result.data || result.data.length === 0) {
+        console.error('[Template Update] No data returned from update operation')
+        throw new Error('Update operation completed but no data was returned. This may indicate an RLS policy issue.')
+      }
+
+      console.log('[Template Update] Save successful, showing toast and refreshing')
       toast.success(isEditing ? 'Template updated successfully' : 'Template created successfully')
-      fetchTemplates()
+      
+      console.log('[Template Update] Fetching templates...')
+      await fetchTemplates()
+      
+      console.log('[Template Update] Closing editor...')
       setShowEditor(false)
       resetEditor()
     } catch (error) {
-      console.error('Error saving template:', error)
-      toast.error('Failed to save template')
+      console.error('[Template Update] Error saving template:', error)
+      toast.error('Failed to save template: ' + (error.message || 'Unknown error'))
     }
   }
 
@@ -183,11 +404,14 @@ function TemplatesContent() {
   }
 
   const openEditor = (template = null) => {
+    console.log('Opening editor with template:', template)
     if (template) {
+      console.log('Setting editing mode with template:', template.id, template.name)
       setEditorData(template)
       setSelectedTemplate(template)
       setIsEditing(true)
     } else {
+      console.log('Creating new template')
       resetEditor()
     }
     setShowEditor(true)
@@ -227,241 +451,264 @@ function TemplatesContent() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-2xl p-8 text-white">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl font-bold mb-2">Communication Templates</h1>
-                <p className="text-blue-100 text-lg">Create powerful demand letter templates for email, SMS, and physical mail</p>
-                <div className="flex items-center mt-4 space-x-6 text-sm">
-                  <div className="flex items-center">
-                    <Mail className="w-4 h-4 mr-2" />
-                    <span>{templates.filter(t => t.channel === 'email').length} Email</span>
-                  </div>
-                  <div className="flex items-center">
-                    <Smartphone className="w-4 h-4 mr-2" />
-                    <span>{templates.filter(t => t.channel === 'sms').length} SMS</span>
-                  </div>
-                  <div className="flex items-center">
-                    <Mailbox className="w-4 h-4 mr-2" />
-                    <span>{templates.filter(t => t.channel === 'physical').length} Physical</span>
-                  </div>
-                </div>
-              </div>
-              <div className="hidden lg:block">
-                <div className="bg-white/10 backdrop-blur rounded-xl p-4">
-                  <FileText className="w-12 h-12 text-white/80 mx-auto mb-2" />
-                  <p className="text-sm text-center text-blue-100">Total Templates</p>
-                  <p className="text-2xl font-bold text-center">{templates.length}</p>
-                </div>
-              </div>
-            </div>
+          <h1 className="text-3xl font-bold text-gray-900">Templates</h1>
+          <p className="mt-2 text-gray-600">Manage your communication templates for automated campaigns</p>
+        </div>
+        {/* Filter and Create Section */}
+        <div className="bg-white rounded-xl p-6 shadow-sm mb-8">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-gray-900">Template Library</h2>
+            <Button onClick={() => openEditor()} className="bg-blue-600 hover:bg-blue-700 shadow-lg">
+              <Plus className="w-4 h-4 mr-2" />
+              Create Template
+            </Button>
           </div>
           
-          {/* Enhanced Channel Filter */}
-          <div className="mt-6 bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <span className="text-sm font-medium text-gray-700">Filter by channel:</span>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => setFilterChannel('all')}
-                    className={`px-4 py-2 text-sm rounded-lg transition-all duration-200 ${
-                      filterChannel === 'all'
-                        ? 'bg-gray-900 text-white shadow-md'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-sm'
-                    }`}
-                  >
-                    All Templates ({templates.length})
-                  </button>
-                  {channelOptions.map((option) => {
-                    const Icon = option.icon
-                    const count = templates.filter(t => t.channel === option.value).length
-                    return (
-                      <button
-                        key={option.value}
-                        onClick={() => setFilterChannel(option.value)}
-                        disabled={!option.enabled}
-                        className={`px-4 py-2 text-sm rounded-lg transition-all duration-200 flex items-center space-x-2 ${
-                          filterChannel === option.value
-                            ? `bg-${option.color}-600 text-white shadow-md`
-                            : option.enabled 
-                              ? `bg-${option.color}-50 text-${option.color}-700 hover:bg-${option.color}-100 hover:shadow-sm border border-${option.color}-200`
-                              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        }`}
-                      >
-                        <Icon className="w-4 h-4" />
-                        <span>{option.label} ({count})</span>
-                        {!option.enabled && <Crown className="w-3 h-3" />}
-                      </button>
-                    )
-                  })}
-                </div>
+          <div className="flex gap-3 mb-4">
+            <button
+              onClick={() => setFilterChannel('all')}
+              className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
+                filterChannel === 'all'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              All Templates ({templates.length})
+            </button>
+            {channelOptions.map((option) => {
+              const Icon = option.icon
+              const count = templates.filter(t => t.channel === option.value).length
+              return (
+                <button
+                  key={option.value}
+                  onClick={() => setFilterChannel(option.value)}
+                  disabled={!option.enabled}
+                  className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+                    filterChannel === option.value
+                      ? 'bg-blue-600 text-white'
+                      : option.enabled 
+                        ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  {option.label} ({count})
+                  {!option.enabled && <Crown className="w-3 h-3" />}
+                </button>
+              )
+            })}
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-blue-50 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Mail className="w-4 h-4 text-blue-600" />
+                <span className="text-sm font-medium text-blue-900">Email Templates</span>
               </div>
-              <Button onClick={() => openEditor()} className="bg-blue-600 hover:bg-blue-700 shadow-lg">
-                <Plus className="w-4 h-4 mr-2" />
-                Create Template
-              </Button>
+              <div className="text-2xl font-bold text-blue-900">{templates.filter(t => t.channel === 'email').length}</div>
+            </div>
+            <div className="bg-green-50 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Smartphone className="w-4 h-4 text-green-600" />
+                <span className="text-sm font-medium text-green-900">SMS Templates</span>
+              </div>
+              <div className="text-2xl font-bold text-green-900">{templates.filter(t => t.channel === 'sms').length}</div>
+            </div>
+            <div className="bg-purple-50 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Mailbox className="w-4 h-4 text-purple-600" />
+                <span className="text-sm font-medium text-purple-900">Physical Mail</span>
+              </div>
+              <div className="text-2xl font-bold text-purple-900">{templates.filter(t => t.channel === 'physical').length}</div>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <FileText className="w-4 h-4 text-gray-600" />
+                <span className="text-sm font-medium text-gray-900">Total Active</span>
+              </div>
+              <div className="text-2xl font-bold text-gray-900">{templates.length}</div>
             </div>
           </div>
         </div>
 
 
         {/* Templates Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredTemplates.map((template) => {
             const channelInfo = getChannelInfo(template.channel)
             const ChannelIcon = channelInfo.icon
             
+            const getChannelIconBg = (channel) => {
+              switch(channel) {
+                case 'email': return 'background: #dbeafe; color: #2563eb;'
+                case 'sms': return 'background: #dcfce7; color: #16a34a;'
+                case 'physical': return 'background: #f3e8ff; color: #9333ea;'
+                default: return 'background: #f3f4f6; color: #6b7280;'
+              }
+            }
+            
+            const getChannelIcon = (channel) => {
+              switch(channel) {
+                case 'email': return '✉️'
+                case 'sms': return '💬'
+                case 'physical': return '📮'
+                default: return '📄'
+              }
+            }
+            
             return (
-              <div key={template.id} className="bg-white rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 border border-gray-100 hover:border-gray-200 group">
-                <div className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center space-x-4">
-                      <div className={`w-12 h-12 bg-gradient-to-br from-${channelInfo.color}-100 to-${channelInfo.color}-200 rounded-xl flex items-center justify-center shadow-sm`}>
-                        <ChannelIcon className={`w-6 h-6 text-${channelInfo.color}-600`} />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">{template.name}</h3>
-                        <div className="flex items-center space-x-2 mt-1">
-                          <span className={`text-xs font-medium px-2 py-1 rounded-full bg-${channelInfo.color}-100 text-${channelInfo.color}-700`}>
-                            {channelInfo.label}
-                          </span>
-                          {template.is_default && (
-                            <span className="bg-gradient-to-r from-yellow-400 to-yellow-500 text-white text-xs px-2 py-1 rounded-full font-medium shadow-sm">
-                              ⭐ Default
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
+              <div
+                key={template.id}
+                className="relative bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-all duration-300 hover:-translate-y-1 cursor-pointer border border-gray-200"
+                onClick={() => openEditor(template)}
+              >
+                
+                {/* Template Header */}
+                <div className="flex items-start gap-4 mb-5">
+                  <div 
+                    className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0"
+                    style={{ ...Object.fromEntries(getChannelIconBg(template.channel).split(';').map(s => s.split(':').map(p => p.trim()))) }}
+                  >
+                    {getChannelIcon(template.channel)}
                   </div>
-
-                  <div className="space-y-3 mb-6">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-1">{template.name}</h3>
+                    <div className="text-sm text-gray-600 capitalize">{template.channel} template</div>
+                  </div>
+                </div>
+                
+                {/* Template Status */}
+                <div className="flex items-center gap-2 mb-5">
+                  <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                  <span className="text-sm text-gray-600">Active • Ready to use</span>
+                </div>
+                
+                {/* Content Preview */}
+                <div className="border-t border-gray-200 pt-5 mb-5">
+                  <div className="space-y-3">
                     {template.channel === 'email' && template.email_subject && (
-                      <div className="bg-gray-50 rounded-lg p-3">
-                        <p className="text-xs font-medium text-gray-500 mb-1">EMAIL SUBJECT</p>
-                        <p className="text-sm text-gray-900 truncate">{template.email_subject}</p>
+                      <div>
+                        <div className="text-xs font-medium text-gray-500 mb-1">SUBJECT LINE</div>
+                        <div className="text-sm text-gray-900 truncate">{template.email_subject}</div>
                       </div>
                     )}
-                    
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <p className="text-xs font-medium text-gray-500 mb-1">CONTENT PREVIEW</p>
-                      <p className="text-sm text-gray-700 line-clamp-2">
+                    <div>
+                      <div className="text-xs font-medium text-gray-500 mb-1">CONTENT PREVIEW</div>
+                      <div className="text-sm text-gray-700 line-clamp-2">
                         {template.channel === 'sms' 
-                          ? template.sms_content?.substring(0, 100) + (template.sms_content?.length > 100 ? '...' : '') 
-                          : template.html_content?.replace(/<[^>]*>/g, '').substring(0, 100) + (template.html_content?.length > 100 ? '...' : '')
+                          ? template.sms_content?.substring(0, 80) + (template.sms_content?.length > 80 ? '...' : '') 
+                          : template.html_content?.replace(/<[^>]*>/g, '').substring(0, 80) + (template.html_content?.length > 80 ? '...' : '')
                         }
-                      </p>
+                      </div>
                     </div>
-                    
-                    <div className="flex items-center justify-between text-xs text-gray-500">
-                      <span>Created {new Date(template.created_at).toLocaleDateString()}</span>
-                      <span className="flex items-center">
-                        <span className="w-2 h-2 bg-green-400 rounded-full mr-1"></span>
-                        Active
-                      </span>
+                    <div className="text-xs text-gray-500">
+                      Created {new Date(template.created_at).toLocaleDateString()}
                     </div>
                   </div>
-
-                  <div className="flex space-x-2">
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      className="flex-1 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-all"
-                      onClick={() => {
-                        setSelectedTemplate(template)
-                        setPreviewMode(true)
-                        setShowEditor(true)
+                </div>
+                
+                {/* Action Buttons */}
+                <div className="flex gap-3 border-t border-gray-200 pt-5">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setSelectedTemplate(template)
+                      setPreviewMode(true)
+                      setShowEditor(true)
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 bg-gray-100 text-gray-700 py-2 px-4 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors"
+                  >
+                    <Eye className="w-4 h-4" />
+                    Preview
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      openEditor(template)
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white py-2 px-4 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                    Edit
+                  </button>
+                  {canDeleteContent() && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        openDeleteModal(template)
                       }}
+                      className="flex items-center justify-center gap-2 bg-red-50 text-red-600 py-2 px-3 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors"
                     >
-                      <Eye className="w-4 h-4 mr-2" />
-                      Preview
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
-                      onClick={() => openEditor(template)}
-                    >
-                      <Edit3 className="w-4 h-4 mr-2" />
-                      Edit
-                    </Button>
-                    {canDeleteContent() && (
-                      <Button 
-                        size="sm" 
-                        variant="outline" 
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50 hover:border-red-300 transition-all"
-                        onClick={() => openDeleteModal(template)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    )}
-                  </div>
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
             )
           })}
 
-          {/* Enhanced Empty State */}
-          {filteredTemplates.length === 0 && (
-            <div className="col-span-full">
-              <div className="text-center py-16 bg-gradient-to-br from-gray-50 to-blue-50 rounded-2xl border-2 border-dashed border-gray-300">
-                <div className="bg-white rounded-full w-20 h-20 flex items-center justify-center mx-auto mb-6 shadow-lg">
-                  <FileText className="w-10 h-10 text-blue-600" />
-                </div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                  {filterChannel === 'all' ? 'No Templates Created Yet' : `No ${getChannelInfo(filterChannel).label} Templates`}
-                </h3>
-                <p className="text-gray-600 mb-8 max-w-md mx-auto">
-                  {filterChannel === 'all' 
-                    ? 'Create your first template to get started with automated demand letters. Choose from email, SMS, or physical mail options.'
-                    : `Create your first ${getChannelInfo(filterChannel).label.toLowerCase()} template to send ${getChannelInfo(filterChannel).label.toLowerCase()} communications.`
-                  }
-                </p>
-                <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                  <Button onClick={() => openEditor()} className="bg-blue-600 hover:bg-blue-700 shadow-lg">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Create Your First Template
-                  </Button>
-                  {filterChannel !== 'all' && (
-                    <Button variant="outline" onClick={() => setFilterChannel('all')} className="border-gray-300">
-                      View All Templates
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
         </div>
+        
+        {filteredTemplates.length === 0 && (
+          <div className="text-center py-12">
+            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <FileText className="w-8 h-8 text-gray-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              {filterChannel === 'all' ? 'No Templates Yet' : `No ${getChannelInfo(filterChannel).label} Templates`}
+            </h3>
+            <p className="text-gray-600 mb-6">
+              {filterChannel === 'all' 
+                ? 'Create your first template to get started with automated communications'
+                : `Create your first ${getChannelInfo(filterChannel).label.toLowerCase()} template`
+              }
+            </p>
+            <div className="flex justify-center gap-3">
+              <button 
+                onClick={() => openEditor()} 
+                className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Create First Template
+              </button>
+              {filterChannel === 'all' && (
+                <button 
+                  onClick={loadSampleTemplates}
+                  className="bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 transition-colors flex items-center gap-2"
+                >
+                  <FileText className="w-4 h-4" />
+                  Load Sample Templates
+                </button>
+              )}
+              {filterChannel !== 'all' && (
+                <button 
+                  onClick={() => setFilterChannel('all')} 
+                  className="bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+                >
+                  View All Templates
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
-        {/* Enhanced Template Editor Modal */}
+        {/* Template Editor Modal */}
         {showEditor && (
-          <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[95vh] overflow-hidden">
-              {/* Modal Header */}
-              <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-8 py-6 text-white">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-2xl font-bold">
-                      {previewMode ? '👁️ Preview Template' : (isEditing ? '✏️ Edit Template' : '✨ Create New Template')}
-                    </h2>
-                    <p className="text-blue-100 mt-1">
-                      {previewMode ? 'Review your template content' : (isEditing ? 'Update your template details' : 'Design a powerful communication template')}
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    className="bg-white/10 border-white/20 text-white hover:bg-white/20"
-                    onClick={() => {
-                      setShowEditor(false)
-                      resetEditor()
-                    }}
-                  >
-                    ✕
-                  </Button>
-                </div>
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => { setShowEditor(false); resetEditor() }}>
+            <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-between items-center p-6 border-b border-gray-200">
+                <h3 className="text-xl font-semibold text-gray-900">
+                  {previewMode ? 'Preview Template' : (isEditing ? 'Edit Template' : 'Create New Template')}
+                </h3>
+                <button 
+                  onClick={() => { setShowEditor(false); resetEditor() }}
+                  className="w-8 h-8 bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center justify-center text-gray-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
               
-              <div className="p-8 overflow-y-auto max-h-[calc(95vh-120px)]">
+              <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
 
                 {!previewMode ? (
                   <div className="space-y-6">
@@ -560,10 +807,13 @@ function TemplatesContent() {
                       <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                         {editorData.channel === 'sms' ? (
                           <><Smartphone className="w-5 h-5 mr-2 text-green-600" />SMS Content</>
+                        ) : editorData.channel === 'email' ? (
+                          <><Mail className="w-5 h-5 mr-2 text-blue-600" />Email Content</>
                         ) : (
-                          <><FileText className="w-5 h-5 mr-2 text-purple-600" />Template Content</>
+                          <><FileText className="w-5 h-5 mr-2 text-purple-600" />Letter Content</>
                         )}
                       </h3>
+                      
                       {editorData.channel === 'sms' ? (
                         <div className="relative">
                           <div className="mb-2 flex items-center justify-between">
@@ -582,7 +832,7 @@ function TemplatesContent() {
                             className={`w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white transition-all ${
                               !smsEnabled ? 'opacity-50 cursor-not-allowed' : ''
                             }`}
-                            placeholder={smsEnabled ? "Your account balance is overdue. Please contact us to arrange payment. Reply STOP to opt out." : "Upgrade to Professional to create SMS templates"}
+                            placeholder={smsEnabled ? "Hi {{name}}, you have an outstanding balance of ${{balance}}. Please call {{company_phone}} to resolve. Reply STOP to opt out." : "Upgrade to Professional to create SMS templates"}
                             disabled={!smsEnabled}
                           />
                           {!smsEnabled && (
@@ -594,54 +844,150 @@ function TemplatesContent() {
                               </div>
                             </div>
                           )}
-                          <p className="text-xs text-gray-500 mt-2">💡 Tip: Keep SMS messages concise and include opt-out instructions</p>
+                          <div className="mt-3 bg-green-50 rounded-lg p-3">
+                            <p className="text-xs font-semibold text-green-800 mb-2">📱 SMS Requirements (Twilio Compatible):</p>
+                            <ul className="text-xs text-green-700 space-y-1">
+                              <li>• Must include opt-out instructions (Reply STOP)</li>
+                              <li>• Keep under 160 characters for single message</li>
+                              <li>• Include company identification</li>
+                              <li>• Must state this is from a debt collector</li>
+                            </ul>
+                          </div>
                         </div>
-                      ) : (
+                      ) : editorData.channel === 'email' ? (
                         <div>
+                          <div className="mb-4 p-4 bg-blue-50 rounded-lg">
+                            <p className="text-sm font-semibold text-blue-800 mb-2">📧 Email Template Builder (SendGrid Compatible)</p>
+                            <p className="text-xs text-blue-700">Create professional HTML emails without coding. Your content will be automatically formatted for optimal delivery.</p>
+                          </div>
+                          
                           <label className="block text-sm font-semibold text-gray-700 mb-2">
-                            Template Content
+                            Email Message Content
                           </label>
                           <textarea
                             value={editorData.html_content}
                             onChange={(e) => setEditorData(prev => ({ ...prev, html_content: e.target.value }))}
                             rows={12}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white transition-all font-mono text-sm"
-                            placeholder="Dear {{name}},\n\nWe are writing to inform you of an outstanding balance on your account...\n\nTotal Amount Due: {{balance}}\n\nPlease contact us immediately to resolve this matter.\n\nSincerely,\nCollections Department"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white transition-all"
+                            placeholder="Write your email content here using simple text. Variables will be automatically replaced when sent.
+
+Example:
+Dear {{debtor_name}},
+
+We would like to bring to your attention that we have not yet received payment for the outstanding amount of ${{balance}} relating to your account. The payment was originally due on {{due_date}} and is now considered past due.
+
+To settle your overdue balance conveniently and securely, please make your payment online: {{payment_link}}
+
+Alternatively, you may mail your payment to:
+{{company_name}}
+{{company_address}}
+{{company_city}}, {{company_state}}, {{company_zip}}
+
+If you have any inquiries, please contact {{contact_name}} at {{contact_email}} or {{contact_phone}}.
+
+We appreciate your prompt attention to this matter.
+
+Best regards,
+{{contact_name}}
+{{company_name}}"
                           />
                           <div className="mt-3 bg-blue-50 rounded-lg p-3">
-                            <p className="text-xs font-semibold text-blue-800 mb-1">💡 Available Variables:</p>
-                            <div className="flex flex-wrap gap-2 text-xs">
-                              <code className="bg-blue-100 text-blue-800 px-2 py-1 rounded">{'{{name}}'}</code>
-                              <code className="bg-blue-100 text-blue-800 px-2 py-1 rounded">{'{{balance}}'}</code>
-                              <code className="bg-blue-100 text-blue-800 px-2 py-1 rounded">{'{{email}}'}</code>
-                              <code className="bg-blue-100 text-blue-800 px-2 py-1 rounded">{'{{state}}'}</code>
-                            </div>
+                            <p className="text-xs font-semibold text-blue-800 mb-2">✨ Features Automatically Added:</p>
+                            <ul className="text-xs text-blue-700 space-y-1">
+                              <li>• Professional HTML formatting</li>
+                              <li>• Mobile-responsive design</li>
+                              <li>• Company branding and headers</li>
+                              <li>• Payment buttons and links</li>
+                              <li>• Legal disclaimers and compliance text</li>
+                            </ul>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="mb-4 p-4 bg-purple-50 rounded-lg">
+                            <p className="text-sm font-semibold text-purple-800 mb-2">📮 Physical Mail Template (Lob Compatible)</p>
+                            <p className="text-xs text-purple-700">Create professional demand letters that will be automatically formatted for printing and mailing.</p>
+                          </div>
+                          
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Letter Content
+                          </label>
+                          <textarea
+                            value={editorData.html_content}
+                            onChange={(e) => setEditorData(prev => ({ ...prev, html_content: e.target.value }))}
+                            rows={12}
+                            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white transition-all"
+                            placeholder="Write your formal demand letter content here. Professional formatting will be applied automatically.
+
+Example:
+Dear {{name}},
+
+This letter serves as formal notice that you have an outstanding debt in the amount of ${{balance}}.
+
+You are hereby demanded to pay the above amount within thirty (30) days from the date of this letter.
+
+If you believe this debt is not yours or you dispute the amount, you must notify us in writing within thirty (30) days.
+
+To resolve this matter immediately, please contact our office at {{company_phone}}.
+
+Sincerely,
+{{collector_name}}
+{{company_name}}"
+                          />
+                          <div className="mt-3 bg-purple-50 rounded-lg p-3">
+                            <p className="text-xs font-semibold text-purple-800 mb-2">🏛️ Professional Features Included:</p>
+                            <ul className="text-xs text-purple-700 space-y-1">
+                              <li>• Official letterhead with company information</li>
+                              <li>• Proper legal formatting and spacing</li>
+                              <li>• Required debt collection disclosures</li>
+                              <li>• Professional signature blocks</li>
+                              <li>• Compliance with federal and state regulations</li>
+                              <li>• Print-ready PDF generation via Lob API</li>
+                            </ul>
                           </div>
                         </div>
                       )}
-                    </div>
+                      
+                      {/* Universal Variables Section */}
+                      <div className="mt-4 bg-gray-100 rounded-lg p-3">
+                        <p className="text-xs font-semibold text-gray-800 mb-2">🔧 Available Variables:</p>
+                        
+                        <div className="mb-3">
+                          <p className="text-xs font-medium text-blue-800 mb-1">👤 Debtor Information (from uploaded data):</p>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                            <code className="bg-blue-50 text-blue-800 px-2 py-1 rounded">{'{{debtor_name}}'}</code>
+                            <code className="bg-blue-50 text-blue-800 px-2 py-1 rounded">{'{{balance}}'}</code>
+                            <code className="bg-blue-50 text-blue-800 px-2 py-1 rounded">{'{{debtor_email}}'}</code>
+                            <code className="bg-blue-50 text-blue-800 px-2 py-1 rounded">{'{{debtor_phone}}'}</code>
+                            <code className="bg-blue-50 text-blue-800 px-2 py-1 rounded">{'{{debtor_address}}'}</code>
+                            <code className="bg-blue-50 text-blue-800 px-2 py-1 rounded">{'{{debtor_city}}'}</code>
+                            <code className="bg-blue-50 text-blue-800 px-2 py-1 rounded">{'{{debtor_state}}'}</code>
+                            <code className="bg-blue-50 text-blue-800 px-2 py-1 rounded">{'{{debtor_zip}}'}</code>
+                            <code className="bg-blue-50 text-blue-800 px-2 py-1 rounded">{'{{account_number}}'}</code>
+                            <code className="bg-blue-50 text-blue-800 px-2 py-1 rounded">{'{{due_date}}'}</code>
+                            <code className="bg-blue-50 text-blue-800 px-2 py-1 rounded">{'{{days_past_due}}'}</code>
+                          </div>
+                        </div>
 
-                    {/* Default Template Checkbox */}
-                    <div className="bg-yellow-50 rounded-xl p-6 mb-6">
-                      <div className="flex items-start space-x-3">
-                        <input
-                          type="checkbox"
-                          id="is_default"
-                          checked={editorData.is_default}
-                          onChange={(e) => setEditorData(prev => ({ ...prev, is_default: e.target.checked }))}
-                          className="h-5 w-5 text-yellow-600 focus:ring-yellow-500 border-gray-300 rounded mt-0.5"
-                          disabled={editorData.channel === 'sms' && !smsEnabled}
-                        />
                         <div>
-                          <label htmlFor="is_default" className="block text-sm font-semibold text-gray-900">
-                            ⭐ Set as default template
-                          </label>
-                          <p className="text-xs text-gray-600 mt-1">
-                            Default templates are automatically used when creating new {editorData.channel} communications
-                          </p>
+                          <p className="text-xs font-medium text-green-800 mb-1">🏢 Company Information (from settings page):</p>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                            <code className="bg-green-50 text-green-800 px-2 py-1 rounded">{'{{company_name}}'}</code>
+                            <code className="bg-green-50 text-green-800 px-2 py-1 rounded">{'{{company_address}}'}</code>
+                            <code className="bg-green-50 text-green-800 px-2 py-1 rounded">{'{{company_city}}'}</code>
+                            <code className="bg-green-50 text-green-800 px-2 py-1 rounded">{'{{company_state}}'}</code>
+                            <code className="bg-green-50 text-green-800 px-2 py-1 rounded">{'{{company_zip}}'}</code>
+                            <code className="bg-green-50 text-green-800 px-2 py-1 rounded">{'{{contact_name}}'}</code>
+                            <code className="bg-green-50 text-green-800 px-2 py-1 rounded">{'{{contact_email}}'}</code>
+                            <code className="bg-green-50 text-green-800 px-2 py-1 rounded">{'{{contact_phone}}'}</code>
+                            <code className="bg-green-50 text-green-800 px-2 py-1 rounded">{'{{contact_title}}'}</code>
+                            <code className="bg-green-50 text-green-800 px-2 py-1 rounded">{'{{payment_link}}'}</code>
+                            <code className="bg-green-50 text-green-800 px-2 py-1 rounded">{'{{current_date}}'}</code>
+                          </div>
                         </div>
                       </div>
                     </div>
+
 
                     {/* Action Buttons */}
                     <div className="flex justify-between items-center pt-6 border-t border-gray-200">

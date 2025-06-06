@@ -38,6 +38,7 @@ import {
   CalendarX2,
   CalendarCheck3,
   CalendarX3,
+  MapPin
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -45,6 +46,8 @@ function VisualizerContent() {
   const { profile, agency } = useAuth()
   const [loading, setLoading] = useState(true)
   const [selectedWorkflow, setSelectedWorkflow] = useState(null)
+  const [showModal, setShowModal] = useState(false)
+  const [modalData, setModalData] = useState(null)
   const [flowData, setFlowData] = useState({
     totalDebtors: 0,
     totalValue: 0,
@@ -59,6 +62,124 @@ function VisualizerContent() {
     }
   })
   const [workflowDetails, setWorkflowDetails] = useState(null)
+
+  // Fetch real debtor data for modal
+  const fetchStageDebtors = useCallback(async (stageType, workflowId, stepNumber = null) => {
+    try {
+      if (stageType === 'uploaded') {
+        // Get all debtors enrolled in this workflow
+        const { data: enrollments, error: enrollError } = await supabase
+          .from('debtor_workflows')
+          .select(`
+            debtor_id,
+            status,
+            started_at,
+            debtors (
+              id,
+              name,
+              balance_cents,
+              created_at
+            )
+          `)
+          .eq('workflow_id', workflowId)
+          .limit(10)
+        
+        if (enrollError) {
+          console.error('Error fetching uploaded debtors:', enrollError)
+          return []
+        }
+        
+        return enrollments?.map(e => e.debtors).filter(Boolean) || []
+        
+      } else if (stageType === 'completed') {
+        // Get debtors who completed workflow or have paid/escalated status
+        const [
+          { data: completedDebtors, error: completedError },
+          { data: paidEscalatedLetters, error: lettersError }
+        ] = await Promise.all([
+          supabase
+            .from('debtor_workflows')
+            .select(`
+              debtor_id,
+              debtors (
+                id,
+                name,
+                balance_cents,
+                created_at
+              )
+            `)
+            .eq('workflow_id', workflowId)
+            .eq('status', 'completed')
+            .limit(5),
+          supabase
+            .from('letters')
+            .select(`
+              debtor_id,
+              status,
+              sent_at,
+              debtors (
+                id,
+                name,
+                balance_cents,
+                created_at
+              )
+            `)
+            .in('status', ['paid', 'escalated'])
+            .limit(5)
+        ])
+        
+        if (completedError || lettersError) {
+          console.error('Error fetching completed debtors:', { completedError, lettersError })
+          return []
+        }
+        
+        const allCompleted = [
+          ...(completedDebtors?.map(d => d.debtors).filter(Boolean) || []),
+          ...(paidEscalatedLetters?.map(l => l.debtors).filter(Boolean) || [])
+        ]
+        
+        // Remove duplicates based on debtor id
+        const uniqueDebtors = allCompleted.filter((debtor, index, self) => 
+          index === self.findIndex(d => d.id === debtor.id)
+        )
+        
+        return uniqueDebtors.slice(0, 10)
+        
+      } else if (stepNumber) {
+        // Get debtors currently at specific step
+        const { data: stepDebtors, error: stepError } = await supabase
+          .from('debtor_workflows')
+          .select(`
+            debtor_id,
+            current_step_number,
+            status,
+            started_at,
+            debtors (
+              id,
+              name,
+              balance_cents,
+              created_at
+            )
+          `)
+          .eq('workflow_id', workflowId)
+          .eq('current_step_number', stepNumber)
+          .eq('status', 'active')
+          .limit(10)
+        
+        if (stepError) {
+          console.error('Error fetching step debtors:', stepError)
+          return []
+        }
+        
+        return stepDebtors?.map(d => d.debtors).filter(Boolean) || []
+      }
+      
+      return []
+    } catch (error) {
+      console.error('Error in fetchStageDebtors:', error)
+      return []
+    }
+  }, [])
 
   // Fetch and calculate flow data
   const fetchFlowData = useCallback(async () => {
@@ -319,6 +440,7 @@ function VisualizerContent() {
 
   const selectWorkflow = (workflow) => {
     setSelectedWorkflow(workflow)
+    setWorkflowDetails(null) // Clear previous details
     fetchWorkflowDetails(workflow.id)
   }
 
@@ -624,209 +746,384 @@ function VisualizerContent() {
     return stats.started > 0 ? Math.round((count / stats.started) * 100) : 0
   }
 
+  // Modal handlers
+  const showNodeDetails = async (stageType, stepNumber = null) => {
+    if (!selectedWorkflow) return
+    
+    const debtors = await fetchStageDebtors(stageType, selectedWorkflow.id, stepNumber)
+    
+    const formatCurrency = (cents) => {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 2,
+      }).format(cents / 100)
+    }
+    
+    const formatDate = (dateStr) => {
+      return new Date(dateStr).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+      })
+    }
+    
+    let title = 'Stage Details'
+    if (stageType === 'uploaded') title = 'Uploaded Debtors'
+    else if (stageType === 'completed') title = 'Completed'
+    else if (stepNumber && workflowDetails) {
+      const step = workflowDetails.steps.find(s => s.step_number === stepNumber)
+      if (step && step.step_type) {
+        title = step.step_type.charAt(0).toUpperCase() + step.step_type.slice(1)
+      } else {
+        title = `Step ${stepNumber}`
+      }
+    }
+    
+    const details = debtors.map(debtor => ({
+      name: debtor.name,
+      amount: formatCurrency(debtor.balance_cents),
+      status: debtor.letters?.[0]?.status || (debtor.debtor_workflows?.[0]?.status === 'completed' ? 'Completed' : 'Active'),
+      date: formatDate(debtor.debtor_workflows?.[0]?.started_at || debtor.created_at)
+    }))
+    
+    setModalData({
+      title,
+      count: stageType === 'uploaded' ? flowData.overall.uploaded.count :
+             stageType === 'completed' ? flowData.overall.paid.count + flowData.overall.escalated.count :
+             stepNumber && workflowDetails ? workflowDetails.steps.find(s => s.step_number === stepNumber)?.count || 0 : 0,
+      details
+    })
+    setShowModal(true)
+  }
+
+  const closeModal = () => {
+    setShowModal(false)
+    setModalData(null)
+  }
+
+  const getStatusColor = (status) => {
+    const colors = {
+      'Opened': '#dbeafe',
+      'Sent': '#fef3c7',
+      'Clicked': '#e0e7ff',
+      'In Transit': '#fef3c7',
+      'Delivered': '#d1fae5',
+      'Paid': '#d1fae5',
+      'Escalated': '#fee2e2'
+    }
+    return colors[status] || '#f3f4f6'
+  }
+
+  const getStatusTextColor = (status) => {
+    const colors = {
+      'Opened': '#1e40af',
+      'Sent': '#92400e',
+      'Clicked': '#4338ca',
+      'In Transit': '#92400e',
+      'Delivered': '#059669',
+      'Paid': '#059669',
+      'Escalated': '#dc2626'
+    }
+    return colors[status] || '#374151'
+  }
+
   return (
-    <div className="p-8 bg-gray-50 min-h-screen">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Automation Visualizer</h1>
-          <p className="text-gray-600">High-level overview of debtor flow through your automation workflows</p>
-        </div>
+    <div className="bg-gray-50 min-h-screen">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 px-8 py-6">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Workflow Visualizer</h1>
+        <p className="text-gray-600">Monitor your demand letter campaigns in real-time</p>
+      </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Left Side - Overall Stats */}
-          <div className="lg:col-span-3">
-            {/* Overall Flow Overview */}
-            <div className="mb-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Overall Debtor Flow</h2>
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <div className="flex items-center justify-between overflow-x-auto space-x-8 min-w-max">
-                  {/* Uploaded */}
-                  <div className="text-center min-w-[120px]">
-                    <div className="bg-blue-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-2">
-                      <Upload className="w-6 h-6 text-blue-600" />
-                    </div>
-                    <h3 className="font-semibold text-gray-900 text-sm">Uploaded</h3>
-                    <p className="text-xl font-bold text-blue-600">{flowData.overall.uploaded.count}</p>
-                    <p className="text-xs text-gray-500">{formatCurrency(flowData.overall.uploaded.value)}</p>
-                  </div>
-
-                  <ArrowRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
-
-                  {/* In Workflows */}
-                  <div className="text-center min-w-[120px]">
-                    <div className="bg-orange-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-2">
-                      <Activity className="w-6 h-6 text-orange-600" />
-                    </div>
-                    <h3 className="font-semibold text-gray-900 text-sm">In Workflows</h3>
-                    <p className="text-xl font-bold text-orange-600">{flowData.overall.active.count}</p>
-                    <p className="text-xs text-gray-500">{formatCurrency(flowData.overall.active.value)}</p>
-                  </div>
-
-                  <div className="flex space-x-6">
-                    {/* Paid */}
-                    <div className="flex items-center">
-                      <ArrowRight className="w-5 h-5 text-gray-400 flex-shrink-0 mr-3" />
-                      <div className="text-center min-w-[100px]">
-                        <div className="bg-green-100 rounded-full w-10 h-10 flex items-center justify-center mx-auto mb-1">
-                          <DollarSign className="w-5 h-5 text-green-600" />
-                        </div>
-                        <h3 className="font-medium text-gray-900 text-sm">Paid</h3>
-                        <p className="text-lg font-bold text-green-600">{flowData.overall.paid.count}</p>
-                        <p className="text-xs text-gray-500">{formatCurrency(flowData.overall.paid.value)}</p>
-                      </div>
-                    </div>
-                    
-                    {/* Escalated */}
-                    <div className="flex items-center">
-                      <ArrowRight className="w-5 h-5 text-gray-400 flex-shrink-0 mr-3" />
-                      <div className="text-center min-w-[100px]">
-                        <div className="bg-red-100 rounded-full w-10 h-10 flex items-center justify-center mx-auto mb-1">
-                          <AlertTriangle className="w-5 h-5 text-red-600" />
-                        </div>
-                        <h3 className="font-medium text-gray-900 text-sm">Escalated</h3>
-                        <p className="text-lg font-bold text-red-600">{flowData.overall.escalated.count}</p>
-                        <p className="text-xs text-gray-500">{formatCurrency(flowData.overall.escalated.value)}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+      {/* Main Content */}
+      <div className="p-8">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-1 cursor-pointer">
+            <div className="flex items-center mb-4">
+              <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                <Upload className="w-6 h-6 text-blue-600" />
               </div>
             </div>
+            <div className="text-3xl font-bold text-gray-900 mb-1">{flowData.overall.uploaded.count}</div>
+            <div className="text-sm text-gray-600 mb-1">Total Debtors Uploaded</div>
+            <div className="text-xs text-gray-500">Last updated 10 minutes ago</div>
+          </div>
 
-            {/* Selected Workflow Details */}
-            {selectedWorkflow && workflowDetails ? (
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-                <div className="p-6 border-b border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-                    <Workflow className="w-5 h-5 text-blue-600 mr-2" />
-                    {selectedWorkflow.name} - Step Details
-                  </h3>
-                  <p className="text-sm text-gray-600 mt-1">
-                    {workflowDetails.totalEnrolled} total enrolled • {workflowDetails.activeEnrollments} active • {workflowDetails.completedEnrollments} completed
-                  </p>
-                </div>
-                
-                <div className="p-6">
-                  <div className="space-y-4">
-                    {workflowDetails.steps.map((step) => {
-                      const stepIcon = step.step_type === 'email' ? Mail : 
-                                     step.step_type === 'wait' ? Clock : 
-                                     step.step_type === 'sms' ? Send : 
-                                     step.step_type === 'physical' ? MapPin : Activity
-                      const IconComponent = stepIcon
-                      
-                      return (
-                        <div key={step.id} className="border border-gray-200 rounded-lg p-4">
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center space-x-3">
-                              <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-sm font-medium">
-                                {step.step_number}
-                              </div>
-                              <IconComponent className="w-5 h-5 text-gray-600" />
-                              <div>
-                                <p className="font-medium text-gray-900">{step.name}</p>
-                                <p className="text-sm text-gray-500 capitalize">{step.step_type}</p>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-lg font-bold text-gray-900">{step.uploadedToStep}</p>
-                              <p className="text-sm text-gray-500">uploaded to step</p>
-                            </div>
-                          </div>
-                          
-                          <div className="grid grid-cols-4 gap-3 mt-3">
-                            <div className="text-center p-2 bg-blue-50 rounded">
-                              <p className="text-sm font-bold text-blue-600">{step.debtorsAtStep}</p>
-                              <p className="text-xs text-gray-600">At This Step</p>
-                            </div>
-                            <div className="text-center p-2 bg-green-50 rounded">
-                              <p className="text-sm font-bold text-green-600">{step.paidCount}</p>
-                              <p className="text-xs text-gray-600">Paid</p>
-                            </div>
-                            <div className="text-center p-2 bg-orange-50 rounded">
-                              <p className="text-sm font-bold text-orange-600">{step.inWorkflowCount}</p>
-                              <p className="text-xs text-gray-600">In Workflows</p>
-                            </div>
-                            <div className="text-center p-2 bg-red-50 rounded">
-                              <p className="text-sm font-bold text-red-600">{step.escalatedCount}</p>
-                              <p className="text-xs text-gray-600">Escalated</p>
-                            </div>
-                          </div>
+          <div className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-1 cursor-pointer">
+            <div className="flex items-center mb-4">
+              <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center">
+                <Clock className="w-6 h-6 text-orange-600" />
+              </div>
+            </div>
+            <div className="text-3xl font-bold text-gray-900 mb-1">{flowData.overall.active.count}</div>
+            <div className="text-sm text-gray-600 mb-1">Currently In Workflow</div>
+            <div className="text-xs text-gray-500">Across all stages</div>
+          </div>
 
-                          {step.debtorDetails.length > 0 && (
-                            <div className="mt-3 pt-3 border-t border-gray-100">
-                              <p className="text-xs text-gray-500 mb-2">Debtors currently at this step:</p>
-                              <div className="flex flex-wrap gap-1">
-                                {step.debtorDetails.slice(0, 5).map((debtor) => (
-                                  <span key={debtor.id} className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded">
-                                    {debtor.name}
-                                  </span>
-                                ))}
-                                {step.debtorDetails.length > 5 && (
-                                  <span className="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded">
-                                    +{step.debtorDetails.length - 5} more
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
+          <div className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-1 cursor-pointer">
+            <div className="flex items-center mb-4">
+              <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                <CheckCircle className="w-6 h-6 text-green-600" />
               </div>
-            ) : (
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
-                <Workflow className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Select a Workflow</h3>
-                <p className="text-gray-500">Choose a workflow from the sidebar to see detailed step-by-step breakdown</p>
+            </div>
+            <div className="text-3xl font-bold text-gray-900 mb-1">{flowData.overall.paid.count + flowData.overall.escalated.count}</div>
+            <div className="text-sm text-gray-600 mb-1">Completed</div>
+            <div className="text-xs text-gray-500">{flowData.overall.paid.count} paid, {flowData.overall.escalated.count} escalated</div>
+          </div>
+
+          <div className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-1 cursor-pointer">
+            <div className="flex items-center mb-4">
+              <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
+                <DollarSign className="w-6 h-6 text-purple-600" />
               </div>
+            </div>
+            <div className="text-3xl font-bold text-gray-900 mb-1">
+              {flowData.overall.uploaded.count > 0 ? Math.round((flowData.overall.paid.count / flowData.overall.uploaded.count) * 100) : 0}%
+            </div>
+            <div className="text-sm text-gray-600 mb-1">Collection Rate</div>
+            <div className="text-xs text-gray-500">{formatCurrency(flowData.overall.paid.value)} collected</div>
+          </div>
+        </div>
+
+        {/* Workflow Selector */}
+        <div className="bg-white rounded-xl p-6 shadow-sm mb-8">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-gray-900">Select Workflow</h2>
+          </div>
+          <div className="flex gap-3">
+            {flowData.workflows.map((workflow, index) => (
+              <button
+                key={workflow.id}
+                onClick={() => selectWorkflow(workflow)}
+                className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
+                  selectedWorkflow?.id === workflow.id
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {workflow.name}
+              </button>
+            ))}
+            {flowData.workflows.length === 0 && (
+              <span className="text-sm text-gray-500">No workflows found</span>
             )}
           </div>
+        </div>
 
-          {/* Right Side - Workflow Selector */}
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-              <div className="p-4 border-b border-gray-200">
-                <h3 className="font-medium text-gray-900">Workflows</h3>
-              </div>
-              <div className="p-4 space-y-2">
-                {flowData.workflows.map((workflow) => (
-                  <button
-                    key={workflow.id}
-                    onClick={() => selectWorkflow(workflow)}
-                    className={`w-full text-left p-3 rounded-lg transition-colors ${
-                      selectedWorkflow?.id === workflow.id
-                        ? 'bg-blue-100 text-blue-700 border border-blue-200'
-                        : 'hover:bg-gray-100 border border-transparent'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">{workflow.name}</p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {workflow.steps?.length || 0} steps • {workflow.enrolled} enrolled
-                          {workflow.isDefault && (
-                            <span className="ml-1 px-1.5 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded">Default</span>
-                          )}
-                        </p>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
+        {/* Workflow Visualizer */}
+        <div className="bg-white rounded-xl p-8 shadow-sm">
+          <h3 className="text-lg font-semibold text-gray-900 mb-6">
+            {selectedWorkflow ? `${selectedWorkflow.name} - Active Debtors Flow` : 'Select a workflow to view details'}
+          </h3>
+          
+          {selectedWorkflow && workflowDetails ? (
+            <div className="overflow-x-auto">
+              <div className="flex items-center gap-10 min-w-max pt-12 pb-5">
+                {/* Start Node - Uploaded */}
+                <div 
+                  className="bg-white border-2 border-gray-300 rounded-xl p-5 min-w-[200px] cursor-pointer hover:border-blue-500 hover:scale-105 transition-all duration-300"
+                  onClick={() => showNodeDetails('uploaded')}
+                >
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <Upload className="w-5 h-5 text-blue-600" />
                     </div>
-                  </button>
-                ))}
-                {flowData.workflows.length === 0 && (
-                  <div className="text-center py-6 text-gray-500">
-                    <p className="text-sm">No workflows found</p>
+                    <div className="font-semibold text-gray-900">Uploaded</div>
                   </div>
-                )}
+                  <div className="text-3xl font-bold text-gray-900 mb-1">{selectedWorkflow.enrolled}</div>
+                  <div className="text-sm text-gray-600 mb-3">Total debtors</div>
+                  <div className="border-t border-gray-200 pt-3">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-600">Active</span>
+                      <span className="font-medium">{selectedWorkflow.active}</span>
+                    </div>
+                    <div className="flex justify-between text-xs mt-1">
+                      <span className="text-gray-600">Completed</span>
+                      <span className="font-medium">{selectedWorkflow.completed}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Dynamic Workflow Steps */}
+                {workflowDetails.steps.map((step, index) => {
+                  const getStepIcon = (type) => {
+                    switch(type) {
+                      case 'email': return <Mail className="w-5 h-5 text-orange-600" />
+                      case 'sms': return <Send className="w-5 h-5 text-purple-600" />
+                      case 'physical': return <MapPin className="w-5 h-5 text-purple-600" />
+                      case 'wait': return <Clock className="w-5 h-5 text-gray-600" />
+                      default: return <Activity className="w-5 h-5 text-blue-600" />
+                    }
+                  }
+                  
+                  const getStepIconBg = (type) => {
+                    switch(type) {
+                      case 'email': return 'bg-orange-100'
+                      case 'sms': return 'bg-purple-100'
+                      case 'physical': return 'bg-purple-100'
+                      case 'wait': return 'bg-gray-100'
+                      default: return 'bg-blue-100'
+                    }
+                  }
+                  
+                  // Calculate day range for this step
+                  const totalDelayDays = workflowDetails.steps
+                    .slice(0, index + 1)
+                    .reduce((sum, s) => sum + (s.delayDays || 0), 0)
+                  const nextStepDelay = index < workflowDetails.steps.length - 1 ? 
+                    totalDelayDays + (workflowDetails.steps[index + 1]?.delayDays || 0) : null
+                  
+                  const dayRange = totalDelayDays === 0 ? 'Day 1' : 
+                    nextStepDelay ? `Day ${totalDelayDays + 1}-${nextStepDelay}` : 
+                    `Day ${totalDelayDays + 1}+`
+                  
+                  return (
+                    <div key={step.id || step.step_number} className="flex items-center gap-10">
+                      {/* Arrow */}
+                      <div className="relative">
+                        <div className="w-16 h-0.5 bg-blue-500"></div>
+                        <div className="absolute -right-2 -top-1.5 w-0 h-0 border-l-[8px] border-l-blue-500 border-t-[4px] border-t-transparent border-b-[4px] border-b-transparent"></div>
+                      </div>
+                      
+                      {/* Step Node */}
+                      <div 
+                        className={`bg-blue-50 border-2 border-blue-500 rounded-xl p-5 min-w-[200px] cursor-pointer hover:scale-105 transition-all duration-300 relative ${
+                          step.debtorsAtStep > 0 ? 'border-blue-500' : 'border-gray-300'
+                        }`}
+                        onClick={() => showNodeDetails('step', step.step_number)}
+                      >
+                        <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-xs font-medium">
+                          {dayRange}
+                        </div>
+                        <div className="flex items-center gap-3 mb-4">
+                          <div className={`w-10 h-10 ${getStepIconBg(step.step_type)} rounded-lg flex items-center justify-center`}>
+                            {getStepIcon(step.step_type)}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-gray-900 capitalize">{step.step_type}</div>
+                            <div className="text-xs text-gray-500">{step.name}</div>
+                          </div>
+                        </div>
+                        <div className="text-3xl font-bold text-gray-900 mb-1">{step.debtorsAtStep}</div>
+                        <div className="text-sm text-gray-600 mb-3">Currently at step</div>
+                        <div className="border-t border-gray-200 pt-3">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-600">Reached step</span>
+                            <span className="font-medium">{step.uploadedToStep}</span>
+                          </div>
+                          <div className="flex justify-between text-xs mt-1">
+                            <span className="text-gray-600">Step #{step.step_number}</span>
+                            <span className="font-medium">{step.delayDays || 0} day delay</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {/* Arrow to completion */}
+                <div className="relative">
+                  <div className="w-16 h-0.5 bg-gray-300"></div>
+                  <div className="absolute -right-2 -top-1.5 w-0 h-0 border-l-[8px] border-l-gray-300 border-t-[4px] border-t-transparent border-b-[4px] border-b-transparent"></div>
+                </div>
+
+                {/* Exit Node - Completed */}
+                <div 
+                  className="bg-green-50 border-2 border-green-500 rounded-xl p-5 min-w-[200px] cursor-pointer hover:scale-105 transition-all duration-300"
+                  onClick={() => showNodeDetails('completed')}
+                >
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                      <CheckCircle className="w-5 h-5 text-green-600" />
+                    </div>
+                    <div className="font-semibold text-gray-900">Completed</div>
+                  </div>
+                  <div className="text-3xl font-bold text-gray-900 mb-1">{flowData.overall.paid.count + flowData.overall.escalated.count}</div>
+                  <div className="text-sm text-gray-600 mb-3">Workflow complete</div>
+                  <div className="border-t border-gray-200 pt-3">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-600">Paid</span>
+                      <span className="font-medium text-green-600">{flowData.overall.paid.count}</span>
+                    </div>
+                    <div className="flex justify-between text-xs mt-1">
+                      <span className="text-gray-600">Escalated</span>
+                      <span className="font-medium text-red-600">{flowData.overall.escalated.count}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : selectedWorkflow ? (
+            <div className="text-center py-12">
+              <Clock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-500">Loading workflow details...</p>
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <Workflow className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-500">Select a workflow above to see the flow visualization</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Modal */}
+      {showModal && modalData && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={closeModal}>
+          <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+              <h3 className="text-xl font-semibold text-gray-900">{modalData.title}</h3>
+              <button 
+                onClick={closeModal}
+                className="w-8 h-8 bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center justify-center text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6">
+              <h4 className="mb-5 text-gray-700">{modalData.title} - {modalData.count} Debtors</h4>
+              <div className="space-y-3">
+                {modalData.details.map((debtor, index) => (
+                  <div key={index} className="bg-gray-50 p-4 rounded-lg">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <div className="font-semibold text-gray-900">{debtor.name}</div>
+                        <div className="text-gray-600 text-sm">{debtor.amount}</div>
+                      </div>
+                      {debtor.status && (
+                        <span 
+                          className="px-3 py-1 rounded-full text-xs font-medium"
+                          style={{ 
+                            backgroundColor: getStatusColor(debtor.status),
+                            color: getStatusTextColor(debtor.status)
+                          }}
+                        >
+                          {debtor.status}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-gray-500 text-xs">Added: {debtor.date}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-6 flex gap-3">
+                <button className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors">
+                  View All
+                </button>
+                <button 
+                  onClick={closeModal}
+                  className="bg-gray-100 text-gray-700 py-2 px-4 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+                >
+                  Close
+                </button>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }
