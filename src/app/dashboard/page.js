@@ -73,6 +73,7 @@ function DashboardContent() {
           status,
           sent_at,
           opened_at,
+          open_count,
           created_at,
           debtors (
             id,
@@ -1342,6 +1343,24 @@ function DashboardContent() {
                         <span className="mr-2">{getStatusIcon(selectedPerson.letter.status)}</span>
                         {selectedPerson.letter.status.charAt(0).toUpperCase() + selectedPerson.letter.status.slice(1)}
                       </span>
+                      
+                      {/* Opened Info */}
+                      {selectedPerson.letter.opened_at && (
+                        <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                          <div className="flex items-center text-sm text-green-700">
+                            <Eye className="w-4 h-4 mr-2" />
+                            <span className="font-medium">Email opened</span>
+                            <span className="ml-2 text-green-600">
+                              {formatDate(selectedPerson.letter.opened_at)}
+                            </span>
+                          </div>
+                          {selectedPerson.letter.open_count > 1 && (
+                            <p className="text-xs text-green-600 mt-1 ml-6">
+                              Opened {selectedPerson.letter.open_count} times
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* Workflow Progress Section */}
@@ -1410,15 +1429,67 @@ function DashboardContent() {
                                 })}
                               </div>
                               
-                              {/* Next Execution Date */}
-                              {selectedPerson.workflowInfo.nextExecutionDate && (
-                                <div className="mt-3 pt-3 border-t border-blue-200">
-                                  <p className="text-xs text-blue-600">
-                                    <Clock className="w-3 h-3 inline mr-1" />
-                                    Next step: {formatDate(selectedPerson.workflowInfo.nextExecutionDate)}
+                              {/* Next Action */}
+                              <div className="mt-3 pt-3 border-t border-blue-200">
+                                {selectedPerson.workflowInfo.enrollment.status === 'completed' ? (
+                                  <div className="flex items-center justify-between">
+                                    <p className="text-sm font-medium text-green-700">
+                                      <CheckCircle className="w-4 h-4 inline mr-1" />
+                                      Workflow Complete
+                                    </p>
+                                    <button
+                                      onClick={() => setShowEscalateConfirm(selectedPerson.letter.id)}
+                                      className="text-xs text-red-600 hover:text-red-800 font-medium"
+                                    >
+                                      Consider Escalation →
+                                    </button>
+                                  </div>
+                                ) : selectedPerson.workflowInfo.nextExecutionDate ? (
+                                  <div>
+                                    <p className="text-sm font-medium text-blue-700 mb-1">
+                                      Next Action:
+                                    </p>
+                                    {(() => {
+                                      const nextStep = selectedPerson.workflowInfo.allSteps.find(
+                                        step => step.step_order === selectedPerson.workflowInfo.currentStep
+                                      )
+                                      const nextDate = new Date(selectedPerson.workflowInfo.nextExecutionDate)
+                                      const now = new Date()
+                                      const daysUntil = Math.ceil((nextDate - now) / (1000 * 60 * 60 * 24))
+                                      
+                                      return (
+                                        <div className="space-y-1">
+                                          <p className="text-xs text-blue-600">
+                                            <Clock className="w-3 h-3 inline mr-1" />
+                                            {nextStep?.name || 'Next Step'}
+                                            {nextStep?.step_type && (
+                                              <span className="ml-1 text-blue-500">
+                                                ({nextStep.step_type})
+                                              </span>
+                                            )}
+                                          </p>
+                                          <p className="text-xs text-blue-500">
+                                            {daysUntil > 0 ? (
+                                              <>Scheduled in {daysUntil} day{daysUntil !== 1 ? 's' : ''}</>
+                                            ) : daysUntil === 0 ? (
+                                              <>Scheduled for today</>
+                                            ) : (
+                                              <>Overdue by {Math.abs(daysUntil)} day{Math.abs(daysUntil) !== 1 ? 's' : ''}</>
+                                            )}
+                                          </p>
+                                          <p className="text-xs text-blue-400">
+                                            {formatDate(selectedPerson.workflowInfo.nextExecutionDate)}
+                                          </p>
+                                        </div>
+                                      )
+                                    })()}
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-gray-500">
+                                    Processing next action...
                                   </p>
-                                </div>
-                              )}
+                                )}
+                              </div>
                             </div>
                           )}
                           

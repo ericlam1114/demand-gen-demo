@@ -128,7 +128,7 @@ async function updateLetterStatus(supabase, letterId, eventType, eventData) {
 
     case 'open':
       updateData = { 
-        status: 'opened',
+        // Keep status as 'sent' - don't change it
         opened_at: eventData.timestamp,
         open_count: supabase.rpc('increment_open_count', { letter_tracking_id: letterId })
       }

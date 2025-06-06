@@ -34,7 +34,7 @@ export async function POST(request) {
     const updates = {}
     
     if (opened && !letter.opened_at) {
-      updates.status = 'opened'
+      // Don't change status - keep it as 'sent'
       updates.opened_at = new Date().toISOString()
       updates.open_count = 1
     }
