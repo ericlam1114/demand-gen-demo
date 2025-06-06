@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Workflow, BarChart3, Settings, FileText, Database, Building2, Home, ArrowRight, Zap } from "lucide-react";
+import { Workflow, BarChart3, Eye, Settings, FileText, Database, Building2, Home, ArrowRight, Zap, GitBranch } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/auth/AuthProvider";
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: BarChart3 },
+  { name: "Visualizer", href: "/visualizer", icon: Eye },
   { name: "Templates", href: "/templates", icon: FileText },
   { name: "Workflows", href: "/workflows", icon: Workflow },
   { name: "Data Sources", href: "/upload", icon: Database },

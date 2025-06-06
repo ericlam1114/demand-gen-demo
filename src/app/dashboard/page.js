@@ -167,7 +167,7 @@ function DashboardContent() {
   }, [letters, searchTerm, statusFilter])
 
   const calculateMetrics = (lettersData) => {
-    const openCases = lettersData.filter(l => ['draft', 'sent', 'opened'].includes(l.status)).length
+    const openCases = lettersData.filter(l => ['draft', 'sent'].includes(l.status)).length
     const closedCases = lettersData.filter(l => l.status === 'paid').length
     const lateCases = lettersData.filter(l => {
       // Consider cases late if sent more than 30 days ago and not paid
@@ -184,7 +184,7 @@ function DashboardContent() {
       const sentDate = new Date(l.sent_at)
       const fortyFiveDaysAgo = new Date()
       fortyFiveDaysAgo.setDate(fortyFiveDaysAgo.getDate() - 45)
-      return sentDate < fortyFiveDaysAgo && ['sent', 'opened'].includes(l.status)
+      return sentDate < fortyFiveDaysAgo && l.status === 'sent'
     }).length
     
     const totalBalance = lettersData.reduce((sum, l) => sum + (l.debtors?.balance_cents || 0), 0)
@@ -1030,7 +1030,6 @@ function DashboardContent() {
                   <option value="all">All Status</option>
                   <option value="draft">Draft</option>
                   <option value="sent">Sent</option>
-                  <option value="opened">Opened</option>
                   <option value="paid">Paid</option>
                   <option value="escalated">Escalated</option>
                 </select>
